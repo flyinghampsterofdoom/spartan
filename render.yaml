@@ -10,6 +10,7 @@ projects:
             region: oregon
             branch: main
             buildCommand: npm ci --include=dev && npm run build
+            preDeployCommand: npm run db:migrate && npm run db:seed
             startCommand: npm start
             healthCheckPath: /
             autoDeployTrigger: commit

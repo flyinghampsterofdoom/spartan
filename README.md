@@ -5,15 +5,18 @@ wages, punch work, and labor reporting.
 
 ## Deployments
 
-- OpenAI Sites hosts the private internal preview and its Cloudflare D1/R2 resources.
+- OpenAI Sites hosts a private visual preview; Render is the production runtime.
 - Render deploys the web application from GitHub using `render.yaml`.
 - Render uses Node 22, installs build tooling with `npm ci --include=dev`, builds with `npm run build`, and starts with `npm start` on the assigned port.
 - Render groups the Starter web service and Basic-256mb PostgreSQL database under the Spartan / Production environment.
 - PostgreSQL uses the 1 GB minimum storage allocation, managed PgBouncer, and private-network-only access.
+- Render runs the checked-in Drizzle migration and idempotent demo seed before each deployment.
 
-The current Render target is the interactive application shell. Durable operations
-data remains on the Cloudflare D1/R2 path until a shared production database
-adapter is introduced.
+Render PostgreSQL is Spartan's production system of record. The database layer,
+initial migration, organization-aware permission model, and realistic demo seed
+are ready. The current web interface is still an interactive application shell;
+its individual modules will move from browser seed data to server-side CRUD in
+the next implementation stages.
 
 ## Development foundation
 
@@ -40,7 +43,8 @@ This starter does not use `wrangler.jsonc`.
 - edit site code under `app/`
 - `.openai/hosting.json` declares optional Sites D1 and R2 bindings
 - `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
+- `db/schema.ts` defines the canonical PostgreSQL model
+- `db/seed.ts` idempotently provisions the initial organization and demo records
 - `examples/d1/` contains an optional D1 example surface
 - `drizzle.config.ts` supports local migration generation when needed
 
@@ -108,8 +112,10 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 - `npm run build`: verify the vinext build output
 - `npm test`: build the starter and verify its rendered loading skeleton
 - `npm run db:generate`: generate Drizzle migrations after schema changes
+- `npm run db:migrate`: apply pending PostgreSQL migrations
+- `npm run db:seed`: add the idempotent Spartan demo dataset
 
 ## Learn More
 
 - [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+- [Drizzle PostgreSQL Guide](https://orm.drizzle.team/docs/get-started-postgresql)
