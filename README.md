@@ -7,7 +7,7 @@ wages, punch work, and labor reporting.
 
 - OpenAI Sites hosts the private internal preview and its Cloudflare D1/R2 resources.
 - Render deploys the web application from GitHub using `render.yaml`.
-- Render uses Node 22, builds with `npm ci && npm run build`, and starts with `npm start` on the assigned port.
+- Render uses Node 22, installs build tooling with `npm ci --include=dev`, builds with `npm run build`, and starts with `npm start` on the assigned port.
 
 The current Render target is the interactive application shell. Durable operations
 data remains on the Cloudflare D1/R2 path until a shared production database
