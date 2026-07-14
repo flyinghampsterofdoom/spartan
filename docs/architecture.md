@@ -3,23 +3,23 @@
 ## Recommended stack
 
 - **Web:** TypeScript, React 19, Next-compatible Vinext app router, Tailwind/CSS.
-- **Runtime:** Cloudflare Workers through OpenAI Sites, keeping request handlers stateless and API-ready for a future native app.
-- **Database:** Cloudflare D1 (SQLite) with Drizzle ORM and checked-in migrations.
-- **Files:** Cloudflare R2 for punch photos and future documents; D1 stores attachment metadata and visibility.
-- **Identity:** Sign in with ChatGPT for the first internal deployment. Application roles and permissions remain in Spartan's own database.
+- **Runtime:** Node 22 on Render using a Next-compatible Vinext app router. Route handlers remain stateless and API-ready for a future native app.
+- **Database:** Render PostgreSQL 18 with Drizzle ORM, checked-in migrations, and managed PgBouncer.
+- **Files:** Object storage for punch photos and future documents; PostgreSQL stores attachment metadata and visibility.
+- **Identity:** Native email/password sessions and organization invitations are the production target. Application roles and permissions remain in Spartan's own database.
 - **Exports:** Server-generated CSV initially; XLSX and accounting/payroll adapters can be added behind the reporting service.
 
 ## Application architecture
 
 The browser and a future native client call the same route/service layer. Authorization is enforced server-side. Modules share canonical relational records; there is no separate scheduling, payroll, or punch database.
 
-`UI -> route handlers -> authorization + domain services -> Drizzle -> D1 / R2`
+`Web/native clients -> route handlers -> authorization + domain services -> Drizzle -> PostgreSQL / object storage`
 
 Domain boundaries are Projects, People, Scheduling, Timekeeping, Punch, Reporting, and Audit. Cross-module changes write the business record and an audit/event record in the same transaction where possible.
 
 ## Entity relationship structure
 
-- A User has a Role and optional Permission Overrides; an Employee may link to a User.
+- A User can belong to one or more Organizations through Memberships. Memberships have a Role and optional Permission Overrides; an Employee may link to a User.
 - Employees join Crews and are assigned or scheduled to Projects.
 - ScheduleEntry is planned labor; TimeEntry plus BreakEntry is actual labor.
 - TimeEntry stores an immutable wage snapshot; WageHistory records employee wage changes.
@@ -28,7 +28,9 @@ Domain boundaries are Projects, People, Scheduling, Timekeeping, Punch, Reportin
 - Attachments reference an owner type/id and store bytes in R2.
 - AuditEvent records actor, entity, action, before/after values, reason, and timestamp.
 
-The complete initial relational schema is in `db/schema.ts`.
+The complete initial relational schema is in `db/schema.ts`. PostgreSQL migrations
+run as a Render pre-deploy command, so a failed migration prevents a new release
+from replacing the last healthy deployment.
 
 ## Permission model
 
