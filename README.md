@@ -8,6 +8,8 @@ wages, punch work, and labor reporting.
 - OpenAI Sites hosts the private internal preview and its Cloudflare D1/R2 resources.
 - Render deploys the web application from GitHub using `render.yaml`.
 - Render uses Node 22, installs build tooling with `npm ci --include=dev`, builds with `npm run build`, and starts with `npm start` on the assigned port.
+- Render groups the Starter web service and Basic-256mb PostgreSQL database under the Spartan / Production environment.
+- PostgreSQL uses the 1 GB minimum storage allocation, managed PgBouncer, and private-network-only access.
 
 The current Render target is the interactive application shell. Durable operations
 data remains on the Cloudflare D1/R2 path until a shared production database
