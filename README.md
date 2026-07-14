@@ -1,4 +1,19 @@
-# vinext-starter
+# Spartan
+
+Construction operations for projects, employees, crews, schedules, timekeeping,
+wages, punch work, and labor reporting.
+
+## Deployments
+
+- OpenAI Sites hosts the private internal preview and its Cloudflare D1/R2 resources.
+- Render deploys the web application from GitHub using `render.yaml`.
+- Render uses Node 22, builds with `npm ci && npm run build`, and starts with `npm start` on the assigned port.
+
+The current Render target is the interactive application shell. Durable operations
+data remains on the Cloudflare D1/R2 path until a shared production database
+adapter is introduced.
+
+## Development foundation
 
 A clean full-stack starter running on
 [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
