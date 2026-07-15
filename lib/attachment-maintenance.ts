@@ -1,9 +1,6 @@
 import { getSql } from "@/db";
 import { getObjectStorage, isObjectStorageConfigured } from "@/lib/storage/object-storage";
 
-const RETRY_INTERVAL_MINUTES = 15;
-const RECONCILIATION_INTERVAL_HOURS = 24;
-
 type PendingAttachment = { id: string; organization_id: string; storage_key: string; metadata: Record<string, unknown> };
 
 export class AttachmentMaintenanceError extends Error {
@@ -33,7 +30,7 @@ export async function runAttachmentMaintenanceIfDue(now = new Date()) {
   const due = await maintenanceStage("due_check", () => sql<{ due: boolean }[]>`
       select not exists (
         select 1 from audit_events where action='attachment.maintenance.completed'
-          and created_at > ${now}::timestamptz - (${RETRY_INTERVAL_MINUTES} * interval '1 minute')
+          and created_at > now() - interval '15 minutes'
       ) as due
     `);
   if (!due[0]?.due) return { skipped: "not_due" } as const;
@@ -64,7 +61,7 @@ export async function runAttachmentMaintenanceIfDue(now = new Date()) {
       const reconciliationDue = await maintenanceStage("reconciliation_due_check", () => sql<{ due: boolean }[]>`
         select not exists (
           select 1 from audit_events where organization_id=${organization.id} and action='attachment.storage_reconciled'
-            and created_at > ${now}::timestamptz - (${RECONCILIATION_INTERVAL_HOURS} * interval '1 hour')
+            and created_at > now() - interval '24 hours'
         ) as due
       `);
       if (!reconciliationDue[0]?.due) continue;
