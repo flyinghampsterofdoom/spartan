@@ -18,6 +18,23 @@ are ready. The current web interface is still an interactive application shell;
 its individual modules will move from browser seed data to server-side CRUD in
 the next implementation stages.
 
+## Authentication and administration
+
+Spartan uses app-owned email/password authentication backed by PostgreSQL.
+Passwords are salted with scrypt, browser sessions are stored as token hashes,
+and the raw session token is sent only in a secure HTTP-only cookie. Operational
+pages resolve the active organization and server permissions before rendering.
+
+Public browser pages are limited to login, invitation acceptance, and password
+recovery. Company administration is available at `/settings` to memberships with
+the required organization permissions. `/platform-admin` additionally requires
+an active platform access record; organization roles never grant platform access.
+
+Copy `.env.example` to `.env.local` for local development. Production variables
+are documented in [the Render deployment guide](docs/deployment.md). Never commit
+real passwords, email keys, database URLs, invitation tokens, reset tokens, or
+session tokens.
+
 ## Development foundation
 
 A clean full-stack starter running on

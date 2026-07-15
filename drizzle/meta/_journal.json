@@ -8,6 +8,20 @@
       "when": 1784071600488,
       "tag": "0000_sudden_daredevil",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784073270753,
+      "tag": "0001_omniscient_nemesis",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784073693511,
+      "tag": "0002_lyrical_annihilus",
+      "breakpoints": true
     }
   ]
 }

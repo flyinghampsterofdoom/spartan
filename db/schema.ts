@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  AnyPgColumn,
   boolean,
   date,
   index,
@@ -34,6 +35,7 @@ export const rolePermissions = pgTable("role_permissions", {
   id: id(),
   roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: "cascade" }),
   permissionId: uuid("permission_id").notNull().references(() => permissions.id, { onDelete: "cascade" }),
+  scope: text("scope").notNull().default("organization"),
 }, (t) => [uniqueIndex("role_permission_uq").on(t.roleId, t.permissionId)]);
 
 export const users = pgTable("users", {
@@ -42,7 +44,11 @@ export const users = pgTable("users", {
   displayName: text("display_name").notNull(),
   passwordHash: text("password_hash"),
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+  status: text("status").notNull().default("active"),
   active: boolean("active").notNull().default(true),
+  passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
+  disabledAt: timestamp("disabled_at", { withTimezone: true }),
+  disabledByUserId: uuid("disabled_by_user_id").references((): AnyPgColumn => users.id),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [uniqueIndex("users_email_uq").on(sql`lower(${t.email})`)]);
@@ -51,7 +57,10 @@ export const organizations = pgTable("organizations", {
   id: id(),
   name: text("name").notNull(),
   slug: text("slug").notNull(),
+  status: text("status").notNull().default("active"),
   active: boolean("active").notNull().default(true),
+  defaultTimezone: text("default_timezone").notNull().default("America/Los_Angeles"),
+  profile: jsonb("profile").$type<Record<string, unknown>>().notNull().default({}),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [uniqueIndex("organizations_slug_uq").on(t.slug)]);
@@ -61,13 +70,17 @@ export const organizationMemberships = pgTable("organization_memberships", {
   organizationId: uuid("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   roleId: uuid("role_id").notNull().references(() => roles.id),
+  employeeId: uuid("employee_id").references((): AnyPgColumn => employees.id),
   status: text("status").notNull().default("active"),
   invitedByUserId: uuid("invited_by_user_id").references(() => users.id),
   joinedAt: timestamp("joined_at", { withTimezone: true }),
+  suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [
   uniqueIndex("organization_membership_uq").on(t.organizationId, t.userId),
+  uniqueIndex("organization_membership_employee_uq").on(t.organizationId, t.employeeId).where(sql`${t.employeeId} is not null`),
   index("organization_membership_user_idx").on(t.userId),
 ]);
 
@@ -76,13 +89,18 @@ export const userPermissionOverrides = pgTable("user_permission_overrides", {
   membershipId: uuid("membership_id").notNull().references(() => organizationMemberships.id, { onDelete: "cascade" }),
   permissionId: uuid("permission_id").notNull().references(() => permissions.id, { onDelete: "cascade" }),
   allowed: boolean("allowed").notNull(),
+  scope: text("scope").notNull().default("organization"),
 }, (t) => [uniqueIndex("user_permission_override_uq").on(t.membershipId, t.permissionId)]);
 
 export const sessions = pgTable("sessions", {
   id: id(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   tokenHash: text("token_hash").notNull(),
+  activeOrganizationId: uuid("active_organization_id").references(() => organizations.id),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedByUserId: uuid("revoked_by_user_id").references(() => users.id),
+  revocationReason: text("revocation_reason"),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
   userAgent: text("user_agent"),
   ipAddress: text("ip_address"),
@@ -94,10 +112,15 @@ export const invitations = pgTable("invitations", {
   organizationId: uuid("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   email: text("email").notNull(),
   roleId: uuid("role_id").notNull().references(() => roles.id),
+  employeeId: uuid("employee_id").references((): AnyPgColumn => employees.id),
   tokenHash: text("token_hash").notNull(),
   invitedByUserId: uuid("invited_by_user_id").notNull().references(() => users.id),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  status: text("status").notNull().default("invited"),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  acceptedByUserId: uuid("accepted_by_user_id").references(() => users.id),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
   createdAt: createdAt(),
 }, (t) => [uniqueIndex("invitations_token_hash_uq").on(t.tokenHash), index("invitations_org_email_idx").on(t.organizationId, t.email)]);
 
@@ -119,6 +142,7 @@ export const employees = pgTable("employees", {
   updatedAt: updatedAt(),
 }, (t) => [
   uniqueIndex("employee_number_uq").on(t.organizationId, t.employeeNumber),
+  uniqueIndex("employee_user_uq").on(t.organizationId, t.userId).where(sql`${t.userId} is not null`),
   index("employees_organization_role_idx").on(t.organizationId, t.roleId),
 ]);
 
@@ -325,8 +349,8 @@ export const timeCorrectionRequests = pgTable("time_correction_requests", {
 
 export const auditEvents = pgTable("audit_events", {
   id: id(),
-  organizationId: uuid("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  actorUserId: uuid("actor_user_id").notNull().references(() => users.id),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  actorUserId: uuid("actor_user_id").references(() => users.id),
   entityType: text("entity_type").notNull(),
   entityId: uuid("entity_id").notNull(),
   action: text("action").notNull(),
@@ -335,3 +359,48 @@ export const auditEvents = pgTable("audit_events", {
   reason: text("reason"),
   createdAt: createdAt(),
 }, (t) => [index("audit_entity_idx").on(t.entityType, t.entityId, t.createdAt), index("audit_actor_idx").on(t.actorUserId, t.createdAt)]);
+
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: id(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  requestedIpAddress: text("requested_ip_address"),
+  createdAt: createdAt(),
+}, (t) => [
+  uniqueIndex("password_reset_token_hash_uq").on(t.tokenHash),
+  index("password_reset_user_idx").on(t.userId, t.createdAt),
+]);
+
+export const platformAccess = pgTable("platform_access", {
+  id: id(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role: text("role").notNull(),
+  status: text("status").notNull().default("active"),
+  grantedByUserId: uuid("granted_by_user_id").references(() => users.id),
+  grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+}, (t) => [uniqueIndex("platform_access_user_role_uq").on(t.userId, t.role)]);
+
+export const emailDeliveries = pgTable("email_deliveries", {
+  id: id(),
+  messageType: text("message_type").notNull(),
+  recipientEmail: text("recipient_email").notNull(),
+  organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("pending"),
+  providerMessageId: text("provider_message_id"),
+  failureReason: text("failure_reason"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index("email_deliveries_recipient_idx").on(t.recipientEmail, t.createdAt)]);
+
+export const authLoginAttempts = pgTable("auth_login_attempts", {
+  keyHash: text("key_hash").primaryKey(),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull().defaultNow(),
+  blockedUntil: timestamp("blocked_until", { withTimezone: true }),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+});
