@@ -2,6 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useRef, useState } from "react";
+import { prepareFieldPhoto, uploadPunchPhoto } from "@/lib/client/photo-upload";
 
 export type AttachmentView = { id: string; fileName: string; url: string; context: string; createdAt: string; uploaderName?: string };
 
@@ -16,42 +17,31 @@ export function AttachmentUploader({ ownerId, initial = [], relatedEventId }: { 
   const [progress, setProgress] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [retryFiles, setRetryFiles] = useState<File[]>([]);
   const cameraRef = useRef<HTMLInputElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
 
-  async function acceptFiles(files: FileList | null) {
+  async function acceptFiles(files: FileList | File[] | null) {
     if (!files?.length || busy) return;
-    setBusy(true); setMessage("");
+    const selected = Array.from(files);
+    setBusy(true); setMessage("Preparing photo…"); setRetryFiles([]);
     const failures: string[] = [];
-    for (const file of Array.from(files)) {
+    for (const original of selected) {
       try {
-        const attachment = await upload(file, value => setProgress(value));
-        setItems(current => [...current, attachment]);
-      } catch (error) { failures.push(`${file.name}: ${error instanceof Error ? error.message : "upload failed"}`); }
+        const file = await prepareFieldPhoto(original);
+        setMessage("Uploading photo…");
+        const uploaded = await uploadPunchPhoto(file, { ownerId, context, relatedEventId }, value => setProgress(value));
+        setItems(current => [...current, { id: uploaded.id, fileName: uploaded.fileName, url: uploaded.url, context: String(uploaded.metadata?.context ?? context), createdAt: String(uploaded.createdAt) }]);
+      } catch (error) { failures.push(`${original.name}: ${error instanceof Error ? error.message : "upload failed"}`); setRetryFiles(current => [...current, original]); }
     }
     setProgress(null); setBusy(false);
-    setMessage(failures.length ? `The punch action remains saved. Photo issue: ${failures.join(" · ")}` : `${files.length} photo${files.length === 1 ? "" : "s"} uploaded.`);
+    setMessage(failures.length ? `Photo not uploaded: ${failures.join(" · ")}` : `${selected.length} photo${selected.length === 1 ? "" : "s"} uploaded.`);
     if (cameraRef.current) cameraRef.current.value = "";
     if (libraryRef.current) libraryRef.current.value = "";
   }
 
-  function upload(file: File, onProgress: (value: number) => void) {
-    return new Promise<AttachmentView>((resolve, reject) => {
-      const form = new FormData();
-      form.set("ownerType", "punch_item"); form.set("ownerId", ownerId); form.set("context", context); form.set("file", file);
-      if (relatedEventId) form.set("relatedEventId", relatedEventId);
-      const request = new XMLHttpRequest();
-      request.open("POST", "/api/attachments");
-      request.upload.onprogress = event => event.lengthComputable && onProgress(Math.round((event.loaded / event.total) * 100));
-      request.onload = () => {
-        const body = parseResponse(request.responseText);
-        if (request.status >= 200 && request.status < 300 && body.attachment) resolve({ id: body.attachment.id, fileName: body.attachment.fileName, url: body.attachment.url, context: String(body.attachment.metadata?.context ?? context), createdAt: String(body.attachment.createdAt) });
-        else reject(new Error(String(body.error ?? "Upload failed.")));
-      };
-      request.onerror = () => reject(new Error("Connection lost during upload. You can retry the photo without recreating the item."));
-      request.send(form);
-    });
-  }
+  function openCamera() { if (cameraRef.current) { cameraRef.current.value = ""; cameraRef.current.click(); } }
+  function openLibrary() { if (libraryRef.current) { libraryRef.current.value = ""; libraryRef.current.click(); } }
 
   async function remove(item: AttachmentView) {
     const reason = window.prompt("Why are you removing this photo?");
@@ -63,8 +53,7 @@ export function AttachmentUploader({ ownerId, initial = [], relatedEventId }: { 
     setMessage("Photo removed.");
   }
 
-  return <section className="attachment-uploader"><div className="attachment-toolbar"><label>Photo type<select value={context} onChange={event => setContext(event.target.value)} disabled={busy}>{contexts.map(([value, name]) => <option value={value} key={value}>{name}</option>)}</select></label><div className="attachment-buttons"><button className="primary" type="button" disabled={busy} onClick={() => cameraRef.current?.click()}>Take photo</button><button className="secondary" type="button" disabled={busy} onClick={() => libraryRef.current?.click()}>Choose photos</button></div><input ref={cameraRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" onChange={event => acceptFiles(event.target.files)}/><input ref={libraryRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple onChange={event => acceptFiles(event.target.files)}/></div>{progress != null && <div className="upload-progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }}/><b>{progress}%</b></div>}{message && <p className={message.includes("issue") || message.includes("could not") ? "upload-message error" : "upload-message"} role="status">{message}</p>}<div className="attachment-grid">{items.map(item => <article key={item.id}><a href={item.url} target="_blank" rel="noreferrer"><img src={item.url} alt={`${contextLabel(item.context)} — ${item.fileName}`}/></a><div><strong>{contextLabel(item.context)}</strong><small>{item.fileName}</small><button className="text-button danger-link" type="button" onClick={() => remove(item)}>Remove</button></div></article>)}{items.length === 0 && <p className="empty-state">No photos yet.</p>}</div></section>;
+  return <section className="attachment-uploader"><div className="attachment-toolbar"><label>Photo type<select value={context} onChange={event => setContext(event.target.value)} disabled={busy}>{contexts.map(([value, name]) => <option value={value} key={value}>{name}</option>)}</select></label><div className="attachment-buttons"><button className="primary" type="button" disabled={busy} onClick={openCamera}>{busy ? "Uploading…" : "Take photo"}</button><button className="secondary" type="button" disabled={busy} onClick={openLibrary}>Choose photos</button>{retryFiles.length > 0 && <button className="secondary" type="button" disabled={busy} onClick={() => acceptFiles(retryFiles)}>Retry upload</button>}</div><input ref={cameraRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" onChange={event => acceptFiles(event.target.files)}/><input ref={libraryRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple onChange={event => acceptFiles(event.target.files)}/></div>{progress != null && <div className="upload-progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }}/><b>{progress}%</b></div>}{message && <p className={message.includes("not uploaded") || message.includes("timed out") ? "upload-message error" : "upload-message"} role="status">{message}</p>}<div className="attachment-grid">{items.map(item => <article key={item.id}><a href={item.url} target="_blank" rel="noreferrer"><img src={item.url} alt={`${contextLabel(item.context)} — ${item.fileName}`}/></a><div><strong>{contextLabel(item.context)}</strong><small>{item.fileName}</small><button className="text-button danger-link" type="button" onClick={() => remove(item)}>Remove</button></div></article>)}{items.length === 0 && <p className="empty-state">No photos yet.</p>}</div></section>;
 }
 
 function contextLabel(value: string) { return contexts.find(([key]) => key === value)?.[1] ?? "Photo"; }
-function parseResponse(value: string) { try { return JSON.parse(value) as { attachment?: { id: string; fileName: string; url: string; metadata?: Record<string, unknown>; createdAt: string }; error?: string }; } catch { return { error: "Unexpected server response." }; } }
