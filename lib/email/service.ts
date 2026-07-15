@@ -49,7 +49,7 @@ export async function sendEmail(message: EmailMessage) {
   const sql = getSql();
   const delivery = await sql<{ id: string }[]>`
     insert into email_deliveries (message_type, recipient_email, organization_id, metadata)
-    values (${message.type}, ${message.to}, ${message.organizationId ?? null}, ${sql.json((message.metadata ?? {}) as never)})
+    values (${message.type}, ${message.to}, ${message.organizationId ?? null}, ${JSON.stringify(message.metadata ?? {})}::jsonb)
     returning id
   `;
   try {

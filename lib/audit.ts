@@ -19,8 +19,8 @@ export async function writeAuditEvent(input: AuditInput) {
       previous_value, new_value, reason
     ) values (
       ${input.organizationId ?? null}, ${input.actorUserId ?? null}, ${input.entityType},
-      ${input.entityId}, ${input.action}, ${sql.json((input.previousValue ?? {}) as never)},
-      ${sql.json((input.newValue ?? {}) as never)}, ${input.reason ?? null}
+      ${input.entityId}, ${input.action}, ${JSON.stringify(input.previousValue ?? {})}::jsonb,
+      ${JSON.stringify(input.newValue ?? {})}::jsonb, ${input.reason ?? null}
     )
   `;
 }

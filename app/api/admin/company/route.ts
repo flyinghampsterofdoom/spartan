@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     requirePermission(auth, "organization.settings.manage");
     const prior = await sql<{ name: string; default_timezone: string; profile: Record<string, unknown> }[]>`select name, default_timezone, profile from organizations where id = ${auth.organizationId}`;
     const next = { name: String(form.get("name") ?? "").trim(), timezone: String(form.get("timezone") ?? "UTC").trim(), phone: String(form.get("phone") ?? "").trim() };
-    await sql`update organizations set name = ${next.name}, default_timezone = ${next.timezone}, profile = ${sql.json({ ...(prior[0].profile ?? {}), phone: next.phone })}, updated_at = now() where id = ${auth.organizationId}`;
+    await sql`update organizations set name = ${next.name}, default_timezone = ${next.timezone}, profile = ${JSON.stringify({ ...(prior[0].profile ?? {}), phone: next.phone })}::jsonb, updated_at = now() where id = ${auth.organizationId}`;
     await writeAuditEvent({ organizationId: auth.organizationId, actorUserId: auth.userId, entityType: "organization", entityId: auth.organizationId, action: "organization.settings_changed", previousValue: prior[0], newValue: next });
   } else if (action === "membership_role") {
     requirePermission(auth, "organization.memberships.manage");
