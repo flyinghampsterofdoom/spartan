@@ -4,7 +4,7 @@ import { getSql } from "@/db";
 import { createOpaqueToken, hashOpaqueToken, verifyPassword } from "./crypto";
 import type { AuthContext, PermissionGrant, PermissionScope } from "./types";
 import { writeAuditEvent } from "@/lib/audit";
-import { appUrl } from "@/lib/http/app-url";
+import { serverAppUrl } from "@/lib/http/app-url";
 
 export const SESSION_COOKIE = process.env.NODE_ENV === "production" ? "__Host-spartan_session" : "spartan_session";
 const SESSION_HOURS = Number(process.env.SESSION_TTL_HOURS ?? "12");
@@ -189,10 +189,10 @@ export async function getAuthContext(): Promise<AuthContext | null> {
 
 export async function requireAuth() {
   const identity = await getSessionIdentity();
-  if (!identity) redirect(appUrl("/login"));
-  if (!identity.activeOrganizationId) redirect(appUrl("/select-organization"));
+  if (!identity) redirect(await serverAppUrl("/login"));
+  if (!identity.activeOrganizationId) redirect(await serverAppUrl("/select-organization"));
   const context = await getAuthContext();
-  if (!context) redirect(appUrl("/login?error=access"));
+  if (!context) redirect(await serverAppUrl("/login?error=access"));
   return context;
 }
 
