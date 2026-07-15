@@ -24,7 +24,7 @@ projects:
                   name: spartan-db
                   property: connectionPoolString
               - key: APP_URL
-                value: https://spartan-operations.onrender.com
+                value: https://simplyspartan.com
               - key: SESSION_TTL_HOURS
                 value: "12"
               - key: EMAIL_PROVIDER

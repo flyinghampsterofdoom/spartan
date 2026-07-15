@@ -9,7 +9,7 @@ failed migration prevents the unhealthy release from replacing the current servi
 | Variable | Secret | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | Yes | Render PostgreSQL pooled private connection string. Managed by the Blueprint. |
-| `APP_URL` | No | Canonical HTTPS URL used in invitation and reset links. |
+| `APP_URL` | No | Canonical HTTPS URL used in invitation and reset links. Production uses `https://simplyspartan.com`. |
 | `SESSION_TTL_HOURS` | No | Absolute server-session lifetime. Defaults to 12 hours. |
 | `SPARTAN_BOOTSTRAP_EMAIL` | No | Email for the initial seeded Owner and platform administrator. |
 | `SPARTAN_BOOTSTRAP_PASSWORD` | Yes | Optional initial Owner password. Set in Render and never in source. When omitted for an unactivated Owner, the seed writes a single-use 24-hour activation link to restricted Render deploy logs. |
