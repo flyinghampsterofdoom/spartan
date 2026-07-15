@@ -3,13 +3,13 @@ import { redirect } from "next/navigation";
 import { getSql } from "@/db";
 import { requireAuth } from "@/lib/auth/session";
 import { requirePlatformRole } from "@/lib/auth/policy";
-import { appUrl } from "@/lib/http/app-url";
+import { serverAppUrl } from "@/lib/http/app-url";
 
 export const dynamic = "force-dynamic";
 
 export default async function PlatformAdminPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const auth = await requireAuth();
-  try { requirePlatformRole(auth, "PLATFORM_ADMIN", "PLATFORM_SUPPORT"); } catch { redirect(appUrl("/")); }
+  try { requirePlatformRole(auth, "PLATFORM_ADMIN", "PLATFORM_SUPPORT"); } catch { redirect(await serverAppUrl("/")); }
   const sql = getSql();
   const [organizations, users, audits, migration] = await Promise.all([
     sql<{ id: string; name: string; status: string; created_at: Date; member_count: number }[]>`

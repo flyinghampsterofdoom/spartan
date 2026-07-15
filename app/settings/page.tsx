@@ -3,13 +3,13 @@ import { redirect } from "next/navigation";
 import { getSql } from "@/db";
 import { requireAuth } from "@/lib/auth/session";
 import { can } from "@/lib/auth/policy";
-import { appUrl } from "@/lib/http/app-url";
+import { serverAppUrl } from "@/lib/http/app-url";
 
 export const dynamic = "force-dynamic";
 
 export default async function CompanySettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const auth = await requireAuth();
-  if (!can(auth, "organization.memberships.manage") && !can(auth, "organization.settings.manage")) redirect(appUrl("/"));
+  if (!can(auth, "organization.memberships.manage") && !can(auth, "organization.settings.manage")) redirect(await serverAppUrl("/"));
   const sql = getSql();
   const [organizations, members, invitations, roles, employees] = await Promise.all([
     sql<{ name: string; default_timezone: string; profile: Record<string, unknown> }[]>`
