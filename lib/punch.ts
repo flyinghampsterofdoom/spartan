@@ -257,13 +257,17 @@ export async function createPunchItem(auth: AuthContext, form: FormData) {
   }
   const duplicate = await sql<{ exists: boolean }[]>`select exists(select 1 from punch_items where project_id=${projectId} and item_number=${itemNumber}) as exists`;
   if (duplicate[0]?.exists) throw new PunchValidationError("That item number already exists on this project.");
-  const rows = await sql<{ id: string }[]>`
-    insert into punch_items (item_number, project_id, punch_list_id, area_id, work_category_id, description, priority, assigned_employee_id, assigned_crew_id, due_date, created_by_user_id)
-    values (${itemNumber}, ${projectId}, ${punchListId}, ${areaId}, ${workCategoryId}, ${description}, ${priority}, ${assignedEmployeeId}, ${assignedCrewId}, ${dueDate}, ${auth.userId}) returning id
-  `;
-  const itemId = rows[0].id;
   const state = { executionStatus: "not_started", approvalStatus: "not_reviewed" };
-  await sql`insert into punch_item_events (punch_item_id, event_type, actor_user_id, notes, metadata) values (${itemId}, 'item.created', ${auth.userId}, ${description}, ${JSON.stringify(state)}::jsonb)`;
+  let itemId = "";
+  await sql.begin(async transaction => {
+    const tx = transaction as unknown as typeof sql;
+    const rows = await tx<{ id: string }[]>`
+      insert into punch_items (item_number, project_id, punch_list_id, area_id, work_category_id, description, priority, assigned_employee_id, assigned_crew_id, due_date, created_by_user_id)
+      values (${itemNumber}, ${projectId}, ${punchListId}, ${areaId}, ${workCategoryId}, ${description}, ${priority}, ${assignedEmployeeId}, ${assignedCrewId}, ${dueDate}, ${auth.userId}) returning id
+    `;
+    itemId = rows[0].id;
+    await tx`insert into punch_item_events (punch_item_id, event_type, actor_user_id, notes, metadata) values (${itemId}, 'item.created', ${auth.userId}, ${description}, ${JSON.stringify(state)}::jsonb)`;
+  });
   await writeAuditEvent({ organizationId: auth.organizationId, actorUserId: auth.userId, entityType: "punch_item", entityId: itemId, action: "punch.item_created", newValue: { projectId, punchListId, itemNumber, description, assignedEmployeeId, assignedCrewId, ...state } });
   return itemId;
 }
@@ -282,7 +286,8 @@ export async function changePunchExecution(auth: AuthContext, form: FormData) {
   const sql = getSql();
   await sql.begin(async transaction => {
     const tx = transaction as unknown as typeof sql;
-    await tx`update punch_items set execution_status=${next}, verification_status=${resubmitting ? "not_reviewed" : item.verification_status}, exception_status=${resubmitting ? null : item.exception_status}, completed_at=case when ${next}='work_complete' then now() else completed_at end, updated_at=now() where id=${itemId}`;
+    const updated = await tx<{ id: string }[]>`update punch_items set execution_status=${next}, verification_status=${resubmitting ? "not_reviewed" : item.verification_status}, exception_status=${resubmitting ? null : item.exception_status}, completed_at=case when ${next}='work_complete' then now() else completed_at end, updated_at=now() where id=${itemId} and execution_status=${item.execution_status} and verification_status=${item.verification_status} returning id`;
+    if (!updated[0]) throw new PunchValidationError("This punch item changed while you were working. Refresh and try again.");
     await tx`insert into punch_item_events (punch_item_id, event_type, actor_user_id, notes, metadata) values (${itemId}, ${`execution.${next}`}, ${auth.userId}, ${notes}, ${JSON.stringify({ previous: item.execution_status, next })}::jsonb)`;
     if (resubmitting) await tx`insert into punch_item_events (punch_item_id, event_type, actor_user_id, notes, metadata) values (${itemId}, 'approval.resubmitted', ${auth.userId}, ${notes}, ${JSON.stringify({ previous: "rework_required", next: "not_reviewed" })}::jsonb)`;
   });
@@ -303,7 +308,8 @@ export async function changePunchApproval(auth: AuthContext, form: FormData) {
   const sql = getSql();
   await sql.begin(async transaction => {
     const tx = transaction as unknown as typeof sql;
-    await tx`update punch_items set verification_status=${next}, exception_status=${next === "rework_required" ? "needs_rework" : null}, approved_at=${next === "approved" ? new Date().toISOString() : null}, updated_at=now() where id=${itemId}`;
+    const updated = await tx<{ id: string }[]>`update punch_items set verification_status=${next}, exception_status=${next === "rework_required" ? "needs_rework" : null}, approved_at=${next === "approved" ? new Date().toISOString() : null}, updated_at=now() where id=${itemId} and execution_status=${item.execution_status} and verification_status=${item.verification_status} returning id`;
+    if (!updated[0]) throw new PunchValidationError("This punch item changed while you were reviewing it. Refresh and try again.");
     await tx`insert into punch_item_events (punch_item_id, event_type, actor_user_id, notes, metadata) values (${itemId}, ${`approval.${next}`}, ${auth.userId}, ${reason}, ${JSON.stringify({ previous: item.verification_status, next, executionUnchanged: item.execution_status })}::jsonb)`;
   });
   await writeAuditEvent({ organizationId: auth.organizationId, actorUserId: auth.userId, entityType: "punch_item", entityId: itemId, action: `punch.approval_${next}`, previousValue: { executionStatus: item.execution_status, approvalStatus: item.verification_status }, newValue: { executionStatus: item.execution_status, approvalStatus: next }, reason });
