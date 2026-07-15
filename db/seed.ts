@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import { hashPassword } from "../lib/auth/crypto";
+import { createOpaqueToken, hashOpaqueToken, hashPassword } from "../lib/auth/crypto";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -11,6 +11,7 @@ const bootstrapEmail = process.env.SPARTAN_BOOTSTRAP_EMAIL?.trim().toLowerCase()
 const bootstrapPasswordHash = process.env.SPARTAN_BOOTSTRAP_PASSWORD
   ? await hashPassword(process.env.SPARTAN_BOOTSTRAP_PASSWORD)
   : null;
+let bootstrapInvitationLink: string | null = null;
 
 const ids = {
   organization: "00000000-0000-4000-8000-000000000001",
@@ -212,7 +213,21 @@ await sql.begin(async (transaction) => {
   await tx`insert into punch_items (id, item_number, project_id, punch_list_id, description, priority, assigned_employee_id, due_date, execution_status, verification_status, created_by_user_id) values ('81000000-0000-4000-8000-000000000001', 'P-001', ${ids.projects.smith}, '80000000-0000-4000-8000-000000000001', 'Touch up paint above primary bathroom vanity', 'normal', ${ids.employees.carlos}, '2026-07-17', 'in_progress', 'not_reviewed', ${ids.ownerUser}) on conflict (project_id, item_number) do nothing`;
   await tx`insert into punch_items (id, item_number, project_id, punch_list_id, description, priority, assigned_employee_id, due_date, execution_status, verification_status, exception_status, created_by_user_id) values ('81000000-0000-4000-8000-000000000002', 'P-014', ${ids.projects.mercer}, '80000000-0000-4000-8000-000000000002', 'Correct paint flashing in conference room', 'high', ${ids.employees.mike}, '2026-07-15', 'work_complete', 'rework_required', 'needs_rework', ${ids.ownerUser}) on conflict (project_id, item_number) do nothing`;
   await tx`insert into punch_item_events (id, punch_item_id, event_type, actor_user_id, notes) values ('82000000-0000-4000-8000-000000000001', '81000000-0000-4000-8000-000000000002', 'review_failed', ${ids.ownerUser}, 'Paint flashing remains visible under conference lighting') on conflict (id) do nothing`;
+
+  if (!bootstrapPasswordHash) {
+    const owner = await tx<{ password_hash: string | null }[]>`select password_hash from users where id = ${ids.ownerUser}`;
+    if (!owner[0]?.password_hash) {
+      const token = createOpaqueToken();
+      await tx`update invitations set status = 'revoked', revoked_at = now() where organization_id = ${ids.organization} and lower(email) = ${bootstrapEmail} and status = 'invited'`;
+      await tx`
+        insert into invitations (organization_id, email, role_id, employee_id, token_hash, invited_by_user_id, expires_at, status)
+        values (${ids.organization}, ${bootstrapEmail}, ${ids.roles.owner}, ${ids.employees.justin}, ${hashOpaqueToken(token)}, ${ids.ownerUser}, now() + interval '24 hours', 'invited')
+      `;
+      bootstrapInvitationLink = new URL(`/invite?token=${encodeURIComponent(token)}`, process.env.APP_URL ?? "http://localhost:3000").toString();
+    }
+  }
 });
 
 await sql.end();
 console.log("Spartan demo data is ready.");
+if (bootstrapInvitationLink) console.log(`Spartan Owner activation link (expires in 24 hours): ${bootstrapInvitationLink}`);
