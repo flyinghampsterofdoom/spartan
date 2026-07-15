@@ -4,7 +4,7 @@ import type { AuthContext } from "@/lib/auth/types";
 import { can } from "@/lib/auth/policy";
 
 const links = [
-  ["/", "⌂", "Overview"], ["/projects", "▱", "Projects"], ["/schedule", "□", "Schedule"], ["/time", "◷", "Time"], ["/crews", "◫", "Crews"], ["/employees", "◎", "Employees"],
+  ["/", "⌂", "Overview"], ["/projects", "▱", "Projects"], ["/schedule", "□", "Schedule"], ["/time", "◷", "Time"], ["/crews", "◫", "Crews"], ["/employees", "◎", "Employees"], ["/wages", "¤", "Wages"],
 ] as const;
 
 export function OperationsFrame({ auth, active, children }: { auth: AuthContext; active: string; children: ReactNode }) {
@@ -13,6 +13,7 @@ export function OperationsFrame({ auth, active, children }: { auth: AuthContext;
     || (href === "/projects" && auth.permissions["projects.view"]?.allowed)
     || (href === "/schedule" && auth.permissions["schedules.view"]?.allowed)
     || (href === "/time" && auth.permissions["time.view"]?.allowed)
+    || (href === "/wages" && (auth.permissions["wage.view"]?.allowed || auth.permissions["wage.edit"]?.allowed || auth.permissions["wage.audit"]?.allowed))
     || ((href === "/crews" || href === "/employees") && auth.permissions["employees.view"]?.allowed));
   return <div className="app-shell operations-shell">
     <aside className="sidebar operations-sidebar">

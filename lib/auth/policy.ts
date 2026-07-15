@@ -61,7 +61,13 @@ export function assertNotSelfApproval(context: AuthContext, recordEmployeeId: st
 export function redactWages<T extends Record<string, unknown>>(context: AuthContext, record: T) {
   if (context.permissions["wage.view"]?.allowed) return record;
   const result = { ...record };
-  for (const key of ["defaultHourlyWageCents", "wageEffectiveDate", "wageSnapshotCents", "laborCostCents", "wageHistory"]) {
+  for (const key of [
+    "defaultHourlyWageCents", "default_hourly_wage_cents", "wageEffectiveDate", "wage_effective_date",
+    "currentWageCents", "current_wage_cents", "futureWageCents", "future_wage_cents",
+    "oldWageCents", "old_wage_cents", "newWageCents", "new_wage_cents",
+    "wageSnapshotCents", "wage_snapshot_cents", "laborCostCents", "labor_cost_cents",
+    "snapshottedLaborCents", "snapshotted_labor_cents", "wageHistory", "wage_history",
+  ]) {
     delete result[key];
   }
   return result;

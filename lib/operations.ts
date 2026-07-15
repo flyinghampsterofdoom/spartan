@@ -146,27 +146,15 @@ export async function saveEmployee(auth: AuthContext, form: FormData) {
   const validRole = await sql<{ ok: boolean }[]>`select exists(select 1 from roles where id = ${roleId}) as ok`;
   if (!validRole[0]?.ok) throw new ValidationError("Role is invalid.");
   if (!id) {
-    const canEditWage = can(auth, "wage.edit");
-    const wage = canEditWage && String(form.get("wage") ?? "").trim() ? parseMoneyToCents(form.get("wage")) : 0;
-    const wageDate = canEditWage && wage > 0 ? isoDate(form.get("wageEffectiveDate"), "Wage effective date", false)! : new Date().toISOString().slice(0, 10);
-    const rows = await sql<{ id: string }[]>`insert into employees (organization_id, employee_number, first_name, last_name, phone, email, role_id, default_hourly_wage_cents, wage_effective_date, notes) values (${auth.organizationId}, ${data.employeeNumber}, ${data.firstName}, ${data.lastName}, ${data.phone}, ${data.email}, ${data.roleId}, ${wage}, ${wageDate}, ${data.notes}) returning id`;
-    await writeAuditEvent({ organizationId: auth.organizationId, actorUserId: auth.userId, entityType: "employee", entityId: rows[0].id, action: "employee.created", newValue: { ...data, wageAssigned: wage > 0 } });
-    if (wage > 0) await sql`insert into wage_history (employee_id, old_wage_cents, new_wage_cents, effective_date, changed_by_user_id, reason) values (${rows[0].id}, null, ${wage}, ${wageDate}, ${auth.userId}, 'Initial wage')`;
+    const rows = await sql<{ id: string }[]>`insert into employees (organization_id, employee_number, first_name, last_name, phone, email, role_id, default_hourly_wage_cents, wage_effective_date, notes) values (${auth.organizationId}, ${data.employeeNumber}, ${data.firstName}, ${data.lastName}, ${data.phone}, ${data.email}, ${data.roleId}, 0, current_date, ${data.notes}) returning id`;
+    await writeAuditEvent({ organizationId: auth.organizationId, actorUserId: auth.userId, entityType: "employee", entityId: rows[0].id, action: "employee.created", newValue: data });
     return;
   }
   const before = await sql<EmployeeRecord[]>`select e.*, r.name as role_name, null::text as crew_names, null::text as user_email from employees e join roles r on r.id=e.role_id where e.id=${id} and e.organization_id=${auth.organizationId}`;
   if (!before[0]) throw new ValidationError("Employee not found.");
   await sql`update employees set employee_number=${data.employeeNumber}, first_name=${data.firstName}, last_name=${data.lastName}, phone=${data.phone}, email=${data.email}, role_id=${data.roleId}, notes=${data.notes}, updated_at=now() where id=${id} and organization_id=${auth.organizationId}`;
-  if (can(auth, "wage.edit") && String(form.get("wage") ?? "").trim()) {
-    const wage = parseMoneyToCents(form.get("wage"));
-    const wageDate = isoDate(form.get("wageEffectiveDate"), "Wage effective date", false)!;
-    if (wage !== before[0].default_hourly_wage_cents || wageDate !== String(before[0].wage_effective_date)) {
-      await sql`update employees set default_hourly_wage_cents=${wage}, wage_effective_date=${wageDate}, updated_at=now() where id=${id} and organization_id=${auth.organizationId}`;
-      await sql`insert into wage_history (employee_id, old_wage_cents, new_wage_cents, effective_date, changed_by_user_id, reason) values (${id}, ${before[0].default_hourly_wage_cents}, ${wage}, ${wageDate}, ${auth.userId}, ${optional(form.get("wageReason"), 300)})`;
-      await writeAuditEvent({ organizationId: auth.organizationId, actorUserId: auth.userId, entityType: "employee", entityId: id, action: "wage.changed", previousValue: { wageCents: before[0].default_hourly_wage_cents, effectiveDate: before[0].wage_effective_date }, newValue: { wageCents: wage, effectiveDate: wageDate }, reason: optional(form.get("wageReason"), 300) });
-    }
-  }
-  await writeAuditEvent({ organizationId: auth.organizationId, actorUserId: auth.userId, entityType: "employee", entityId: id, action: "employee.updated", previousValue: before[0], newValue: data });
+  const priorEmployee = { employeeNumber: before[0].employee_number, firstName: before[0].first_name, lastName: before[0].last_name, phone: before[0].phone, email: before[0].email, roleId: before[0].role_id, notes: before[0].notes };
+  await writeAuditEvent({ organizationId: auth.organizationId, actorUserId: auth.userId, entityType: "employee", entityId: id, action: "employee.updated", previousValue: priorEmployee, newValue: data });
 }
 
 export async function saveProject(auth: AuthContext, form: FormData) {

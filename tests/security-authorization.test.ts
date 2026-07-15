@@ -9,6 +9,7 @@ import { NextRequest } from "next/server";
 import { operationScope, parseMoneyToCents, ValidationError } from "../lib/operations";
 import { addDays, getWeekStart, parseScheduleDate, scheduleScope, ScheduleValidationError } from "../lib/scheduling";
 import { calculateLabor, dateInTimeZone, timeScope } from "../lib/timekeeping";
+import { effectiveWageFromHistory, hasWageAdministrationAccess, parseWageCents, parseWageDate, WageValidationError } from "../lib/wages";
 
 function context(overrides: Partial<AuthContext> = {}): AuthContext {
   return {
@@ -55,10 +56,32 @@ test("self-only access permits own schedule and time but rejects another employe
 });
 
 test("wages are removed from server responses without wage permission", () => {
-  const redacted = redactWages(context(), { id: "employee-a", name: "Worker A", defaultHourlyWageCents: 3100, wageHistory: [3100] });
+  const redacted = redactWages(context(), { id: "employee-a", name: "Worker A", defaultHourlyWageCents: 3100, current_wage_cents: 3100, futureWageCents: 3300, snapshotted_labor_cents: 120000, wageHistory: [3100] });
   assert.equal(redacted.name, "Worker A");
   assert.equal("defaultHourlyWageCents" in redacted, false);
+  assert.equal("current_wage_cents" in redacted, false);
+  assert.equal("futureWageCents" in redacted, false);
+  assert.equal("snapshotted_labor_cents" in redacted, false);
   assert.equal("wageHistory" in redacted, false);
+});
+
+test("wage administration remains a separate permission boundary", () => {
+  assert.equal(hasWageAdministrationAccess(context()), false);
+  assert.equal(hasWageAdministrationAccess(context({ permissions: { "wage.audit": { allowed: true, scope: "organization" } } })), true);
+});
+
+test("effective wage selection preserves past rates and activates future changes by work date", () => {
+  const history = [
+    { effectiveDate: "2026-07-01", wageCents: 2800 },
+    { effectiveDate: "2026-08-01", wageCents: 3100 },
+  ];
+  assert.equal(effectiveWageFromHistory(history, "2026-06-30", 2600), 2600);
+  assert.equal(effectiveWageFromHistory(history, "2026-07-31", 2600), 2800);
+  assert.equal(effectiveWageFromHistory(history, "2026-08-01", 2600), 3100);
+  assert.equal(parseWageCents("31.50"), 3150);
+  assert.equal(parseWageDate("2026-08-01"), "2026-08-01");
+  assert.throws(() => parseWageCents("31.999"), WageValidationError);
+  assert.throws(() => parseWageDate("2026-02-31"), WageValidationError);
 });
 
 test("self approval is rejected for time and punch work", () => {
