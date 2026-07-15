@@ -18,6 +18,9 @@ export function AttachmentUploader({ ownerId, initial = [], relatedEventId }: { 
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [retryFiles, setRetryFiles] = useState<File[]>([]);
+  const [removeTarget, setRemoveTarget] = useState<AttachmentView | null>(null);
+  const [removeReason, setRemoveReason] = useState("");
+  const [removing, setRemoving] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
 
@@ -43,17 +46,23 @@ export function AttachmentUploader({ ownerId, initial = [], relatedEventId }: { 
   function openCamera() { if (cameraRef.current) { cameraRef.current.value = ""; cameraRef.current.click(); } }
   function openLibrary() { if (libraryRef.current) { libraryRef.current.value = ""; libraryRef.current.click(); } }
 
-  async function remove(item: AttachmentView) {
-    const reason = window.prompt("Why are you removing this photo?");
-    if (!reason) return;
-    const response = await fetch(item.url, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) { setMessage(String(body.error ?? "Photo could not be removed.")); return; }
-    setItems(current => current.filter(value => value.id !== item.id));
-    setMessage("Photo removed.");
+  function beginRemove(item: AttachmentView) { setRemoveTarget(item); setRemoveReason(""); setMessage(""); }
+  function cancelRemove() { if (!removing) { setRemoveTarget(null); setRemoveReason(""); } }
+
+  async function confirmRemove() {
+    if (!removeTarget || !removeReason.trim() || removing) return;
+    setRemoving(true); setMessage("Removing photo…");
+    try {
+      const response = await fetch(removeTarget.url, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: removeReason.trim() }) });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(body.error ?? "Photo could not be removed."));
+      setItems(current => current.filter(value => value.id !== removeTarget.id));
+      setRemoveTarget(null); setRemoveReason(""); setMessage("Photo removed.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Photo could not be removed."); }
+    finally { setRemoving(false); }
   }
 
-  return <section className="attachment-uploader"><div className="attachment-toolbar"><label>Photo type<select value={context} onChange={event => setContext(event.target.value)} disabled={busy}>{contexts.map(([value, name]) => <option value={value} key={value}>{name}</option>)}</select></label><div className="attachment-buttons"><button className="primary" type="button" disabled={busy} onClick={openCamera}>{busy ? "Uploading…" : "Take photo"}</button><button className="secondary" type="button" disabled={busy} onClick={openLibrary}>Choose photos</button>{retryFiles.length > 0 && <button className="secondary" type="button" disabled={busy} onClick={() => acceptFiles(retryFiles)}>Retry upload</button>}</div><input ref={cameraRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" onChange={event => acceptFiles(event.target.files)}/><input ref={libraryRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple onChange={event => acceptFiles(event.target.files)}/></div>{progress != null && <div className="upload-progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }}/><b>{progress}%</b></div>}{message && <p className={message.includes("not uploaded") || message.includes("timed out") ? "upload-message error" : "upload-message"} role="status">{message}</p>}<div className="attachment-grid">{items.map(item => <article key={item.id}><a href={item.url} target="_blank" rel="noreferrer"><img src={item.url} alt={`${contextLabel(item.context)} — ${item.fileName}`}/></a><div><strong>{contextLabel(item.context)}</strong><small>{item.fileName}</small><button className="text-button danger-link" type="button" onClick={() => remove(item)}>Remove</button></div></article>)}{items.length === 0 && <p className="empty-state">No photos yet.</p>}</div></section>;
+  return <section className="attachment-uploader"><div className="attachment-toolbar"><label>Photo type<select value={context} onChange={event => setContext(event.target.value)} disabled={busy}>{contexts.map(([value, name]) => <option value={value} key={value}>{name}</option>)}</select></label><div className="attachment-buttons"><button className="primary" type="button" disabled={busy} onClick={openCamera}>{busy ? "Uploading…" : "Take photo"}</button><button className="secondary" type="button" disabled={busy} onClick={openLibrary}>Choose photos</button>{retryFiles.length > 0 && <button className="secondary" type="button" disabled={busy} onClick={() => acceptFiles(retryFiles)}>Retry upload</button>}</div><input ref={cameraRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment" onChange={event => acceptFiles(event.target.files)}/><input ref={libraryRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple onChange={event => acceptFiles(event.target.files)}/></div>{progress != null && <div className="upload-progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }}/><b>{progress}%</b></div>}{message && <p className={message.includes("not uploaded") || message.includes("timed out") || message.includes("could not") ? "upload-message error" : "upload-message"} role="status">{message}</p>}<div className="attachment-grid">{items.map(item => <article key={item.id}><a href={item.url} target="_blank" rel="noreferrer"><img src={item.url} alt={`${contextLabel(item.context)} — ${item.fileName}`}/></a><div><strong>{contextLabel(item.context)}</strong><small>{item.fileName}</small>{removeTarget?.id === item.id ? <div className="attachment-remove-form"><label>Reason<input value={removeReason} onChange={event => setRemoveReason(event.target.value)} placeholder="Why is this photo being removed?" autoFocus disabled={removing}/></label><div><button className="secondary" type="button" onClick={cancelRemove} disabled={removing}>Cancel</button><button className="danger" type="button" onClick={confirmRemove} disabled={removing || !removeReason.trim()}>{removing ? "Removing…" : "Remove photo"}</button></div></div> : <button className="text-button danger-link" type="button" onClick={() => beginRemove(item)}>Remove</button>}</div></article>)}{items.length === 0 && <p className="empty-state">No photos yet.</p>}</div></section>;
 }
 
 function contextLabel(value: string) { return contexts.find(([key]) => key === value)?.[1] ?? "Photo"; }
