@@ -66,8 +66,8 @@ export function SpartanApp({ userName, roleName, organizationName, canAdmin, isP
         <Brand />
         <nav aria-label="Primary navigation">
           <p className="nav-kicker">Workspace</p>
-          {nav.map(item => item.id === "projects" || item.id === "team"
-            ? <a key={item.id} className="nav-item" href={item.id === "projects" ? "/projects" : "/employees"}><span>{item.glyph}</span>{item.label}</a>
+          {nav.map(item => item.id === "projects" || item.id === "schedule" || item.id === "team"
+            ? <a key={item.id} className="nav-item" href={item.id === "projects" ? "/projects" : item.id === "schedule" ? "/schedule" : "/employees"}><span>{item.glyph}</span>{item.label}</a>
             : <button key={item.id} className={view === item.id ? "nav-item selected" : "nav-item"} onClick={() => { setView(item.id); setMobileNav(false); }}><span>{item.glyph}</span>{item.label}{item.id === "punch" && <em>14</em>}</button>)}
         </nav>
         <div className="sidebar-foot">

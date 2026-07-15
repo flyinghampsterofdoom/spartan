@@ -12,9 +12,11 @@ async function render(path = "/") {
 }
 
 test("anonymous visitors are redirected away from the operational shell", async () => {
-  const response = await render("/");
-  assert.equal(response.status, 307);
-  assert.match(response.headers.get("location") ?? "", /\/login$/);
+  for (const path of ["/", "/projects", "/employees", "/crews", "/schedule"]) {
+    const response = await render(path);
+    assert.equal(response.status, 307);
+    assert.match(response.headers.get("location") ?? "", /\/login$/);
+  }
 });
 
 test("anonymous visitors cannot access company or platform administration", async () => {

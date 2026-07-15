@@ -7,6 +7,7 @@ import { appUrl } from "../lib/http/app-url";
 import { assertSameOrigin } from "../lib/http/security";
 import { NextRequest } from "next/server";
 import { operationScope, parseMoneyToCents, ValidationError } from "../lib/operations";
+import { addDays, getWeekStart, parseScheduleDate, scheduleScope, ScheduleValidationError } from "../lib/scheduling";
 
 function context(overrides: Partial<AuthContext> = {}): AuthContext {
   return {
@@ -130,4 +131,24 @@ test("hourly wages are normalized to integer cents and malformed values are reje
   assert.equal(parseMoneyToCents("31.50"), 3150);
   assert.throws(() => parseMoneyToCents("31.999"), ValidationError);
   assert.throws(() => parseMoneyToCents("-5"), ValidationError);
+});
+
+test("schedule scopes distinguish personal, assigned, and organization-wide access", () => {
+  const employee = context({ permissions: { "schedules.view": { allowed: true, scope: "self" } } });
+  assert.equal(scheduleScope(employee), "self");
+  assert.equal(scheduleScope(employee, "schedules.manage"), null);
+  const foreman = context({ permissions: {
+    "schedules.view": { allowed: true, scope: "assigned_project" },
+    "schedules.manage": { allowed: true, scope: "assigned_crew" },
+  } });
+  assert.equal(scheduleScope(foreman), "assigned_project");
+  assert.equal(scheduleScope(foreman, "schedules.manage"), "assigned_crew");
+});
+
+test("weekly schedule date helpers use stable Monday boundaries", () => {
+  assert.equal(getWeekStart("2026-07-14"), "2026-07-13");
+  assert.equal(getWeekStart("2026-07-19"), "2026-07-13");
+  assert.equal(addDays("2026-07-13", 6), "2026-07-19");
+  assert.equal(parseScheduleDate("2026-07-14"), "2026-07-14");
+  assert.throws(() => parseScheduleDate("2026-02-31"), ScheduleValidationError);
 });
