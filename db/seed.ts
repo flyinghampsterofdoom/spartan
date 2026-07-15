@@ -221,7 +221,13 @@ await sql.begin(async (transaction) => {
     const owner = await tx<{ password_hash: string | null }[]>`select password_hash from users where id = ${ids.ownerUser}`;
     if (!owner[0]?.password_hash) {
       const token = createOpaqueToken();
-      await tx`update invitations set status = 'revoked', revoked_at = now() where organization_id = ${ids.organization} and lower(email) = ${bootstrapEmail} and status = 'invited'`;
+      await tx`
+        update invitations
+        set status = 'revoked', revoked_at = now()
+        where organization_id = ${ids.organization}
+          and status = 'invited'
+          and (employee_id = ${ids.employees.justin} or lower(email) = ${bootstrapEmail})
+      `;
       await tx`
         insert into invitations (organization_id, email, role_id, employee_id, token_hash, invited_by_user_id, expires_at, status)
         values (${ids.organization}, ${bootstrapEmail}, ${ids.roles.owner}, ${ids.employees.justin}, ${hashOpaqueToken(token)}, ${ids.ownerUser}, now() + interval '24 hours', 'invited')
