@@ -4,11 +4,12 @@ import { getAuthContext, revokeUserSessions } from "@/lib/auth/session";
 import { requirePlatformRole } from "@/lib/auth/policy";
 import { writeAuditEvent } from "@/lib/audit";
 import { assertSameOrigin } from "@/lib/http/security";
+import { appUrl } from "@/lib/http/app-url";
 
 export async function POST(request: NextRequest) {
   assertSameOrigin(request);
   const auth = await getAuthContext();
-  if (!auth) return NextResponse.redirect(new URL("/login", request.url), 303);
+  if (!auth) return NextResponse.redirect(appUrl("/login", request.url), 303);
   requirePlatformRole(auth, "PLATFORM_ADMIN");
   const form = await request.formData();
   const action = String(form.get("action") ?? "");
@@ -36,5 +37,5 @@ export async function POST(request: NextRequest) {
       await writeAuditEvent({ actorUserId: auth.userId, entityType: "user", entityId: userId, action: `platform.user_${status}`, previousValue: prior[0], newValue: { status }, reason: "Platform administration" });
     }
   }
-  return NextResponse.redirect(new URL("/platform-admin?saved=1", request.url), 303);
+  return NextResponse.redirect(appUrl("/platform-admin?saved=1", request.url), 303);
 }

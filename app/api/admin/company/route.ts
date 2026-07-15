@@ -5,11 +5,12 @@ import { can, requirePermission } from "@/lib/auth/policy";
 import { createInvitation } from "@/lib/auth/tokens";
 import { writeAuditEvent } from "@/lib/audit";
 import { assertSameOrigin } from "@/lib/http/security";
+import { appUrl } from "@/lib/http/app-url";
 
 export async function POST(request: NextRequest) {
   assertSameOrigin(request);
   const auth = await getAuthContext();
-  if (!auth) return NextResponse.redirect(new URL("/login", request.url), 303);
+  if (!auth) return NextResponse.redirect(appUrl("/login", request.url), 303);
   const form = await request.formData();
   const action = String(form.get("action") ?? "");
   const sql = getSql();
@@ -64,5 +65,5 @@ export async function POST(request: NextRequest) {
   } else if (!can(auth, "organization.memberships.manage")) {
     throw new Error("Not authorized.");
   }
-  return NextResponse.redirect(new URL("/settings?saved=1", request.url), 303);
+  return NextResponse.redirect(appUrl("/settings?saved=1", request.url), 303);
 }

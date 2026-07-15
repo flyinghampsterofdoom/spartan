@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 import { getSql } from "@/db";
 import { getSessionIdentity } from "@/lib/auth/session";
+import { appUrl } from "@/lib/http/app-url";
 
 export const dynamic = "force-dynamic";
 
 export default async function OrganizationSelectionPage() {
   const session = await getSessionIdentity();
-  if (!session) redirect("/login");
+  if (!session) redirect(appUrl("/login"));
   const organizations = await getSql()<{ id: string; name: string; role_name: string }[]>`
     select o.id, o.name, r.name as role_name
     from organization_memberships m join organizations o on o.id = m.organization_id join roles r on r.id = m.role_id
