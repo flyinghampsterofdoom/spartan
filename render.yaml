@@ -27,6 +27,12 @@ projects:
                 value: https://spartan-operations.onrender.com
               - key: SESSION_TTL_HOURS
                 value: "12"
+              - key: EMAIL_PROVIDER
+                value: resend
+              - key: EMAIL_FROM
+                value: Spartan <no-reply@simplyspartan.com>
+              - key: RESEND_API_KEY
+                sync: false
         databases:
           - name: spartan-db
             plan: basic-256mb
