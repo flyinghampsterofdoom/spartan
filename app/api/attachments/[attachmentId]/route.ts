@@ -27,8 +27,8 @@ export async function DELETE(request: NextRequest, context: Context) {
   const auth = await getAuthContext();
   if (!auth) return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
   try {
-    const body = await request.json().catch(() => ({})) as { reason?: string };
-    await deleteAttachment(auth, (await context.params).attachmentId, String(body.reason ?? ""));
+    const body = await request.json().catch(() => ({})) as { reason?: string; explanation?: string };
+    await deleteAttachment(auth, (await context.params).attachmentId, body);
     return NextResponse.json({ deleted: true });
   } catch (error) { return errorResponse(error); }
 }

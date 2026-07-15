@@ -8,6 +8,13 @@ import { getObjectStorage } from "@/lib/storage/object-storage";
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const ATTACHMENT_CONTEXTS = ["initial_issue", "work_in_progress", "completion", "rejection_review", "rework", "final_completion", "general"] as const;
 export type AttachmentContext = typeof ATTACHMENT_CONTEXTS[number];
+export const ATTACHMENT_REMOVAL_REASONS = ["poor_photo", "cleanup", "duplicate", "wrong_photo", "miscellaneous", "other"] as const;
+export type AttachmentRemovalReason = typeof ATTACHMENT_REMOVAL_REASONS[number];
+
+const removalReasonLabels: Record<AttachmentRemovalReason, string> = {
+  poor_photo: "Poor photo", cleanup: "Cleanup", duplicate: "Duplicate", wrong_photo: "Wrong photo",
+  miscellaneous: "Miscellaneous", other: "Other",
+};
 
 export class AttachmentValidationError extends Error {
   constructor(message: string) { super(message); this.name = "AttachmentValidationError"; }
@@ -26,6 +33,15 @@ export function parseAttachmentContext(value: unknown): AttachmentContext {
   const context = String(value ?? "general") as AttachmentContext;
   if (!ATTACHMENT_CONTEXTS.includes(context)) throw new AttachmentValidationError("Photo context is invalid.");
   return context;
+}
+
+export function parseAttachmentRemoval(input: { reason?: unknown; explanation?: unknown }) {
+  const reason = String(input.reason ?? "") as AttachmentRemovalReason;
+  const explanation = String(input.explanation ?? "").trim();
+  if (!ATTACHMENT_REMOVAL_REASONS.includes(reason)) throw new AttachmentValidationError("Select a valid removal reason.");
+  if (explanation.length > 500) throw new AttachmentValidationError("The removal explanation must be 500 characters or fewer.");
+  if (reason === "other" && !explanation) throw new AttachmentValidationError("Explain why this photo is being removed.");
+  return { reason, reasonLabel: removalReasonLabels[reason], explanation: explanation || null };
 }
 
 export function uploadPermissionsForContext(context: AttachmentContext) {
@@ -146,10 +162,9 @@ export async function listPunchAttachments(auth: AuthContext, itemIds: string[])
   `;
 }
 
-export async function deleteAttachment(auth: AuthContext, attachmentId: string, reason: string) {
+export async function deleteAttachment(auth: AuthContext, attachmentId: string, removalInput: { reason?: unknown; explanation?: unknown }) {
   if (!validUuid(attachmentId)) throw new AttachmentValidationError("Attachment is invalid.");
-  const deletionReason = reason.trim();
-  if (!deletionReason || deletionReason.length > 500) throw new AttachmentValidationError("A deletion reason of 500 characters or fewer is required.");
+  const removal = parseAttachmentRemoval(removalInput);
   const sql = getSql();
   const rows = await sql<AttachmentRecord[]>`select * from attachments where id=${attachmentId} and organization_id=${auth.organizationId} and deleted_at is null`;
   const attachment = rows[0];
@@ -159,19 +174,21 @@ export async function deleteAttachment(auth: AuthContext, attachmentId: string, 
   await authorizeTarget(auth, attachment.owner_type, attachment.owner_id, permissions);
   await sql.begin(async transaction => {
     const tx = transaction as unknown as typeof sql;
-    const updated = await tx<{ id: string }[]>`update attachments set deleted_at=now(), deleted_by_user_id=${auth.userId}, deletion_reason=${deletionReason}, object_delete_pending=true where id=${attachmentId} and deleted_at is null returning id`;
+    const updated = await tx<{ id: string }[]>`update attachments set deleted_at=now(), deleted_by_user_id=${auth.userId}, deletion_reason=${removal.reasonLabel}, object_delete_pending=true,
+      metadata=metadata || ${JSON.stringify({ removalReason: removal.reason, removalExplanation: removal.explanation, objectDeleteAttemptCount: 0 })}::jsonb
+      where id=${attachmentId} and deleted_at is null returning id`;
     if (!updated[0]) throw new AttachmentValidationError("Attachment was already deleted.");
     if (attachment.owner_type === "punch_item") await tx`
       insert into punch_item_events (punch_item_id, event_type, actor_user_id, notes, metadata)
-      values (${attachment.owner_id}, 'attachment.deleted', ${auth.userId}, ${deletionReason}, ${JSON.stringify({ attachmentId })}::jsonb)
+      values (${attachment.owner_id}, 'attachment.deleted', ${auth.userId}, ${removal.explanation ?? removal.reasonLabel}, ${JSON.stringify({ attachmentId, removalReason: removal.reason, removalReasonLabel: removal.reasonLabel, removalExplanation: removal.explanation })}::jsonb)
     `;
   });
-  await writeAuditEvent({ organizationId: auth.organizationId, actorUserId: auth.userId, entityType: "attachment", entityId: attachmentId, action: "attachment.deleted", previousValue: { ownerType: attachment.owner_type, ownerId: attachment.owner_id, storageKey: attachment.storage_key }, newValue: { deleted: true }, reason: deletionReason });
+  await writeAuditEvent({ organizationId: auth.organizationId, actorUserId: auth.userId, entityType: "attachment", entityId: attachmentId, action: "attachment.deleted", previousValue: { ownerType: attachment.owner_type, ownerId: attachment.owner_id, storageKey: attachment.storage_key }, newValue: { deleted: true, removalReason: removal.reason, removalReasonLabel: removal.reasonLabel, removalExplanation: removal.explanation }, reason: removal.explanation ?? removal.reasonLabel });
   try {
     await getObjectStorage().delete(attachment.storage_key);
     await sql`update attachments set object_delete_pending=false where id=${attachmentId}`;
   } catch {
-    await sql`update attachments set metadata=metadata || ${JSON.stringify({ objectDeleteErrorAt: new Date().toISOString() })}::jsonb where id=${attachmentId}`;
+    await sql`update attachments set metadata=metadata || ${JSON.stringify({ objectDeleteErrorAt: new Date().toISOString(), objectDeleteAttemptCount: 1 })}::jsonb where id=${attachmentId}`;
   }
   return { deleted: true };
 }

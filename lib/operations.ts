@@ -114,6 +114,49 @@ export async function listProjects(auth: AuthContext): Promise<ProjectRecord[]> 
   `;
 }
 
+export type ProjectPageData = {
+  project: ProjectRecord;
+  assignments: { id: string; kind: "employee" | "crew"; name: string; starts_on: string | null; ends_on: string | null }[];
+  schedule: { entry_count: number; employee_count: number; scheduled_minutes: number };
+  labor: { entry_count: number; employee_count: number; paid_minutes: number; labor_cost_cents: number };
+  punch: { total_count: number; open_count: number; review_count: number; approved_count: number; photo_count: number };
+};
+
+export async function getProjectPageData(auth: AuthContext, projectId: string): Promise<ProjectPageData | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)) return null;
+  const project = (await listProjects(auth)).find(value => value.id === projectId);
+  if (!project) return null;
+  const sql = getSql();
+  const [assignments, scheduleRows, laborRows, punchRows] = await Promise.all([
+    sql<ProjectPageData["assignments"]>`
+      select pa.id, case when pa.employee_id is not null then 'employee' else 'crew' end as kind,
+        coalesce(e.first_name || ' ' || e.last_name, c.name) as name, pa.starts_on::text, pa.ends_on::text
+      from project_assignments pa left join employees e on e.id=pa.employee_id left join crews c on c.id=pa.crew_id
+      where pa.project_id=${projectId} order by name
+    `,
+    sql<ProjectPageData["schedule"][]>`
+      select count(*)::int as entry_count, count(distinct employee_id)::int as employee_count,
+        coalesce(sum(case when start_time is not null and end_time is not null then extract(epoch from (end_time-start_time))/60 else 0 end),0)::int as scheduled_minutes
+      from schedule_entries where organization_id=${auth.organizationId} and project_id=${projectId}
+    `,
+    sql<ProjectPageData["labor"][]>`
+      select count(*)::int as entry_count, count(distinct employee_id)::int as employee_count,
+        coalesce(sum(paid_minutes),0)::int as paid_minutes, coalesce(sum(labor_cost_cents),0)::int as labor_cost_cents
+      from time_entries where organization_id=${auth.organizationId} and project_id=${projectId}
+    `,
+    sql<ProjectPageData["punch"][]>`
+      select count(distinct pi.id)::int as total_count,
+        count(distinct pi.id) filter (where pi.verification_status <> 'approved')::int as open_count,
+        count(distinct pi.id) filter (where pi.execution_status='work_complete' and pi.verification_status='not_reviewed')::int as review_count,
+        count(distinct pi.id) filter (where pi.verification_status='approved')::int as approved_count,
+        count(distinct a.id) filter (where a.deleted_at is null)::int as photo_count
+      from punch_items pi left join attachments a on a.owner_type='punch_item' and a.owner_id=pi.id
+      where pi.project_id=${projectId}
+    `,
+  ]);
+  return { project, assignments, schedule: scheduleRows[0], labor: laborRows[0], punch: punchRows[0] };
+}
+
 export type CrewRecord = { id: string; name: string; active: boolean; foreman_employee_id: string | null; foreman_name: string | null; member_count: number; member_ids: string[] };
 
 export async function listCrews(auth: AuthContext): Promise<CrewRecord[]> {

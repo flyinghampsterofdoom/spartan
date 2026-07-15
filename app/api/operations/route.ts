@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   const form = await request.formData();
   const action = String(form.get("action") ?? "");
   const returnTo = String(form.get("returnTo") ?? "/");
-  const safeReturnTo = /^\/(employees|projects|crews)(\?.*)?$/.test(returnTo) ? returnTo : "/";
+  const safeReturnTo = /^\/(employees|projects|crews)(\/[0-9a-z-]+(?:\/edit)?)?(\?.*)?$/.test(returnTo) ? returnTo : "/";
   try {
     if (action === "employee_save") await saveEmployee(auth, form);
     else if (action === "project_save") await saveProject(auth, form);

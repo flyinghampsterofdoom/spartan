@@ -1,4 +1,4 @@
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 export class ObjectStorageConfigurationError extends Error {
   constructor() { super("Attachment storage is not configured."); this.name = "ObjectStorageConfigurationError"; }
@@ -8,6 +8,7 @@ export interface ObjectStorage {
   put(key: string, body: Uint8Array, contentType: string, metadata?: Record<string, string>): Promise<void>;
   get(key: string): Promise<{ body: Uint8Array; contentType?: string }>;
   delete(key: string): Promise<void>;
+  list(prefix?: string): Promise<string[]>;
 }
 
 let storage: ObjectStorage | undefined;
@@ -35,6 +36,16 @@ export function getObjectStorage(): ObjectStorage {
       return { body: await result.Body.transformToByteArray(), contentType: result.ContentType };
     },
     async delete(key) { await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })); },
+    async list(prefix) {
+      const keys: string[] = [];
+      let continuationToken: string | undefined;
+      do {
+        const result = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: continuationToken }));
+        for (const object of result.Contents ?? []) if (object.Key) keys.push(object.Key);
+        continuationToken = result.IsTruncated ? result.NextContinuationToken : undefined;
+      } while (continuationToken);
+      return keys;
+    },
   };
   return storage;
 }

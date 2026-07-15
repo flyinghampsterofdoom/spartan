@@ -11,7 +11,8 @@ import { addDays, getWeekStart, parseScheduleDate, scheduleScope, ScheduleValida
 import { calculateLabor, dateInTimeZone, timeScope } from "../lib/timekeeping";
 import { effectiveWageFromHistory, hasWageAdministrationAccess, parseWageCents, parseWageDate, WageValidationError } from "../lib/wages";
 import { assertApprovalTransition, assertExecutionTransition, punchAccessScope, punchAssignmentBelongsToEmployee, PunchValidationError } from "../lib/punch";
-import { attachmentAccessAllowed, attachmentObjectKey, deletePermissionsForAttachment, eventTypesForAttachmentContext, uploadPermissionsForContext, validateImageSignature, AttachmentValidationError } from "../lib/attachments";
+import { attachmentAccessAllowed, attachmentObjectKey, deletePermissionsForAttachment, eventTypesForAttachmentContext, parseAttachmentRemoval, uploadPermissionsForContext, validateImageSignature, AttachmentValidationError } from "../lib/attachments";
+import { reconcileObjectKeys } from "../lib/attachment-maintenance";
 
 function context(overrides: Partial<AuthContext> = {}): AuthContext {
   return {
@@ -140,6 +141,19 @@ test("attachment validation rejects MIME spoofing and creates collision-resistan
   const key = attachmentObjectKey("10000000-0000-4000-8000-000000000001", "punch_item", "81000000-0000-4000-8000-000000000001", "91000000-0000-4000-8000-000000000001");
   assert.equal(key, "10000000-0000-4000-8000-000000000001/punch_item/81000000-0000-4000-8000-000000000001/91000000-0000-4000-8000-000000000001");
   assert.doesNotMatch(key, /photo|\.jpg/i);
+});
+
+test("attachment removal reasons are structured and Other requires an explanation", () => {
+  assert.deepEqual(parseAttachmentRemoval({ reason: "duplicate" }), { reason: "duplicate", reasonLabel: "Duplicate", explanation: null });
+  assert.deepEqual(parseAttachmentRemoval({ reason: "other", explanation: "Contains private paperwork" }), { reason: "other", reasonLabel: "Other", explanation: "Contains private paperwork" });
+  assert.throws(() => parseAttachmentRemoval({ reason: "other" }), AttachmentValidationError);
+  assert.throws(() => parseAttachmentRemoval({ reason: "made_up" }), AttachmentValidationError);
+});
+
+test("attachment reconciliation reports orphans and missing active objects without deleting", () => {
+  assert.deepEqual(reconcileObjectKeys(["org/kept", "org/orphan"], ["org/kept", "org/pending"], ["org/kept", "org/missing"]), {
+    orphanKeys: ["org/orphan"], missingKeys: ["org/missing"],
+  });
 });
 
 test("organization Owner role does not imply platform administration", () => {

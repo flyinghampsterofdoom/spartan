@@ -46,5 +46,7 @@ Production delivery uses `EMAIL_PROVIDER=resend`, `EMAIL_FROM`, and the secret
 
 PostgreSQL retains attachment metadata after deletion for auditability. Spartan immediately hides soft-deleted records, attempts to remove the R2 object, and flags a failed object removal for later cleanup rather than silently losing the audit record.
 
+The Render health check calls `/api/health`. At most once every 15 minutes, that health pass retries up to 50 pending R2 deletions. Once per day per organization it also compares R2 object keys with authoritative PostgreSQL attachment records. Reconciliation writes orphan and missing-object counts and up to 100 affected keys to `audit_events`; it does not automatically delete orphaned objects.
+
 After changing the schema, run `npm run db:generate`, inspect the SQL, and commit the
 migration. Validate with `npm test`, `npm run lint`, and `npx tsc --noEmit`.
