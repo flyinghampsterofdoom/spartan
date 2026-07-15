@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     if (!target[0]) throw new Error("Membership not found.");
     if (target[0].user_id === auth.userId && action !== "membership_activate") throw new Error("You cannot suspend or revoke your own active membership.");
     const status = action === "membership_activate" ? "active" : action === "membership_suspend" ? "suspended" : "revoked";
-    await sql`update organization_memberships set status = ${status}, suspended_at = ${status === "suspended" ? new Date() : null}, revoked_at = ${status === "revoked" ? new Date() : null}, updated_at = now() where id = ${membershipId}`;
+    await sql`update organization_memberships set status = ${status}, suspended_at = ${status === "suspended" ? new Date().toISOString() : null}, revoked_at = ${status === "revoked" ? new Date().toISOString() : null}, updated_at = now() where id = ${membershipId}`;
     if (["suspended", "revoked"].includes(status)) await revokeUserSessions(target[0].user_id, auth.userId, `membership_${status}`);
     await writeAuditEvent({ organizationId: auth.organizationId, actorUserId: auth.userId, entityType: "organization_membership", entityId: membershipId, action: `membership.${status}`, previousValue: { status: target[0].status }, newValue: { status } });
   } else if (action === "sessions_revoke") {

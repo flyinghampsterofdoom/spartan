@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       const prior = await sql<{ status: string; active: boolean }[]>`select status, active from users where id = ${userId}`;
       if (!prior[0]) throw new Error("User not found.");
       const status = action === "user_disable" ? "disabled" : "active";
-      await sql`update users set status = ${status}, active = ${status === "active"}, disabled_at = ${status === "disabled" ? new Date() : null}, disabled_by_user_id = ${status === "disabled" ? auth.userId : null}, updated_at = now() where id = ${userId}`;
+      await sql`update users set status = ${status}, active = ${status === "active"}, disabled_at = ${status === "disabled" ? new Date().toISOString() : null}, disabled_by_user_id = ${status === "disabled" ? auth.userId : null}, updated_at = now() where id = ${userId}`;
       if (status === "disabled") await revokeUserSessions(userId, auth.userId, "user_disabled");
       await writeAuditEvent({ actorUserId: auth.userId, entityType: "user", entityId: userId, action: `platform.user_${status}`, previousValue: prior[0], newValue: { status }, reason: "Platform administration" });
     }

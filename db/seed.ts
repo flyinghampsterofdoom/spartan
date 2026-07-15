@@ -140,7 +140,7 @@ await sql.begin(async (transaction) => {
   await tx`insert into organizations (id, name, slug) values (${ids.organization}, 'Spartan Construction', 'spartan-construction') on conflict (slug) do nothing`;
   await tx`
     insert into users (id, email, display_name, password_hash, active, status, email_verified_at, password_changed_at)
-    values (${ids.ownerUser}, ${bootstrapEmail}, 'Justin Rawlinson', ${bootstrapPasswordHash}, true, 'active', now(), ${bootstrapPasswordHash ? new Date() : null})
+    values (${ids.ownerUser}, ${bootstrapEmail}, 'Justin Rawlinson', ${bootstrapPasswordHash}, true, 'active', now(), ${bootstrapPasswordHash ? new Date().toISOString() : null})
     on conflict (id) do update set email = excluded.email,
       password_hash = coalesce(excluded.password_hash, users.password_hash),
       status = 'active', active = true, updated_at = now()

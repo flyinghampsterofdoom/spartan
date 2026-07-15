@@ -52,15 +52,19 @@ export async function createSession(userId: string) {
       and o.status = 'active' and o.active = true
     order by m.joined_at nulls last, m.created_at
   `;
-  const activeOrganizationId = activeMemberships.length === 1 ? activeMemberships[0].organization_id : null;
+  const activeOrganizationId = activeMemberships.length === 1 ? String(activeMemberships[0].organization_id) : null;
   const expiresAt = new Date(Date.now() + SESSION_HOURS * 60 * 60 * 1000);
+  const userAgentHeader = requestHeaders.get("user-agent");
+  const forwardedForHeader = requestHeaders.get("x-forwarded-for");
+  const userAgent = userAgentHeader == null ? null : String(userAgentHeader);
+  const ipAddress = forwardedForHeader == null ? null : String(forwardedForHeader).split(",")[0].trim();
   const inserted = await sql<{ id: string }[]>`
     insert into sessions (
       user_id, token_hash, active_organization_id, expires_at, user_agent, ip_address
     ) values (
-      ${userId}, ${tokenHash}, ${activeOrganizationId}, ${expiresAt},
-      ${requestHeaders.get("user-agent")},
-      ${requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null}
+      ${String(userId)}, ${String(tokenHash)}, ${activeOrganizationId}, ${expiresAt.toISOString()},
+      ${userAgent},
+      ${ipAddress}
     ) returning id
   `;
   const cookieStore = await cookies();
