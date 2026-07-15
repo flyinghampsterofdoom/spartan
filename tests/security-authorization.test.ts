@@ -3,6 +3,7 @@ import test from "node:test";
 import { assertNotSelfApproval, can, ensureAuthenticated, isAccountUsable, redactWages, requirePlatformRole } from "../lib/auth/policy";
 import { hashPassword, verifyPassword } from "../lib/auth/crypto";
 import type { AuthContext } from "../lib/auth/types";
+import { appUrl } from "../lib/http/app-url";
 
 function context(overrides: Partial<AuthContext> = {}): AuthContext {
   return {
@@ -78,4 +79,14 @@ test("password hashing is salted and verifiable", async () => {
   assert.notEqual(first, second);
   assert.equal(await verifyPassword("LongSecurePassword42", first), true);
   assert.equal(await verifyPassword("IncorrectPassword42", first), false);
+});
+
+test("production redirects use Render's external HTTPS URL when APP_URL is unset", () => {
+  const priorAppUrl = process.env.APP_URL;
+  const priorRenderUrl = process.env.RENDER_EXTERNAL_URL;
+  delete process.env.APP_URL;
+  process.env.RENDER_EXTERNAL_URL = "https://spartan-operations.onrender.com";
+  assert.equal(appUrl("/login"), "https://spartan-operations.onrender.com/login");
+  if (priorAppUrl === undefined) delete process.env.APP_URL; else process.env.APP_URL = priorAppUrl;
+  if (priorRenderUrl === undefined) delete process.env.RENDER_EXTERNAL_URL; else process.env.RENDER_EXTERNAL_URL = priorRenderUrl;
 });
