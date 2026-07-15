@@ -8,6 +8,7 @@ import { assertSameOrigin } from "../lib/http/security";
 import { NextRequest } from "next/server";
 import { operationScope, parseMoneyToCents, ValidationError } from "../lib/operations";
 import { addDays, getWeekStart, parseScheduleDate, scheduleScope, ScheduleValidationError } from "../lib/scheduling";
+import { calculateLabor, dateInTimeZone, timeScope } from "../lib/timekeeping";
 
 function context(overrides: Partial<AuthContext> = {}): AuthContext {
   return {
@@ -151,4 +152,30 @@ test("weekly schedule date helpers use stable Monday boundaries", () => {
   assert.equal(addDays("2026-07-13", 6), "2026-07-19");
   assert.equal(parseScheduleDate("2026-07-14"), "2026-07-14");
   assert.throws(() => parseScheduleDate("2026-02-31"), ScheduleValidationError);
+});
+
+test("timekeeping calculations preserve daily regular and overtime allocation", () => {
+  assert.deepEqual(calculateLabor({
+    clockInMs: Date.parse("2026-07-13T14:08:00Z"),
+    clockOutMs: Date.parse("2026-07-13T23:02:00Z"),
+    unpaidBreakMinutes: 30,
+    wageCents: 3100,
+  }), {
+    grossMinutes: 534,
+    unpaidBreakMinutes: 30,
+    paidMinutes: 504,
+    regularMinutes: 480,
+    overtimeMinutes: 24,
+    laborCostCents: 26660,
+  });
+  const secondProject = calculateLabor({ clockInMs: 0, clockOutMs: 180 * 60000, unpaidBreakMinutes: 0, priorPaidMinutes: 420, wageCents: 3000 });
+  assert.equal(secondProject.regularMinutes, 60);
+  assert.equal(secondProject.overtimeMinutes, 120);
+  assert.equal(secondProject.laborCostCents, 12000);
+});
+
+test("timekeeping uses the organization timezone and retains permission scope", () => {
+  assert.equal(dateInTimeZone(new Date("2026-07-15T02:00:00Z"), "America/Los_Angeles"), "2026-07-14");
+  assert.equal(timeScope(context({ permissions: { "time.view": { allowed: true, scope: "self" } } })), "self");
+  assert.equal(timeScope(context({ permissions: { "time.view": { allowed: true, scope: "assigned_project" } } })), "assigned_project");
 });

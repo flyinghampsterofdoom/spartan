@@ -3,22 +3,10 @@ import { writeAuditEvent } from "@/lib/audit";
 import { assertNotSelfApproval } from "@/lib/auth/policy";
 import type { AuthContext } from "@/lib/auth/types";
 import { authorizeResource } from "@/lib/auth/authorization";
+import { approveTime } from "@/lib/timekeeping";
 
 export async function approveTimeEntry(context: AuthContext, timeEntryId: string) {
-  const sql = getSql();
-  const rows = await sql<{ employee_id: string; organization_id: string; project_id: string; status: string }[]>`
-    select employee_id, organization_id, project_id, status from time_entries where id = ${timeEntryId} limit 1
-  `;
-  const entry = rows[0];
-  if (!entry) throw new Error("Time entry not found.");
-  await authorizeResource(context, "time.approve", {
-    organizationId: entry.organization_id,
-    employeeId: entry.employee_id,
-    projectId: entry.project_id,
-  });
-  assertNotSelfApproval(context, entry.employee_id, "time");
-  await sql`update time_entries set status = 'approved', approved_by_user_id = ${context.userId}, approved_at = now(), updated_at = now() where id = ${timeEntryId}`;
-  await writeAuditEvent({ organizationId: context.organizationId, actorUserId: context.userId, entityType: "time_entry", entityId: timeEntryId, action: "time.approved", previousValue: { status: entry.status }, newValue: { status: "approved" } });
+  await approveTime(context, timeEntryId);
 }
 
 export async function approvePunchItem(context: AuthContext, punchItemId: string) {
