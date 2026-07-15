@@ -7,7 +7,7 @@ if (!databaseUrl) {
 }
 
 const sql = postgres(databaseUrl, { max: 1, prepare: false });
-const bootstrapEmail = process.env.SPARTAN_BOOTSTRAP_EMAIL?.trim().toLowerCase() || "justin@example.com";
+const bootstrapEmail = process.env.SPARTAN_BOOTSTRAP_EMAIL?.trim().toLowerCase() || "justin.rawlinson@gmail.com";
 const bootstrapPasswordHash = process.env.SPARTAN_BOOTSTRAP_PASSWORD
   ? await hashPassword(process.env.SPARTAN_BOOTSTRAP_PASSWORD)
   : null;
@@ -160,7 +160,10 @@ await sql.begin(async (transaction) => {
     await tx`
       insert into employees (id, organization_id, user_id, employee_number, first_name, last_name, email, role_id, default_hourly_wage_cents, wage_effective_date)
       values (${id}, ${ids.organization}, ${id === ids.employees.justin ? ids.ownerUser : null}, ${number}, ${first}, ${last}, ${email}, ${roleId}, ${wage}, ${effectiveDate})
-      on conflict (organization_id, employee_number) do nothing
+      on conflict (organization_id, employee_number) do update set
+        email = excluded.email,
+        user_id = coalesce(excluded.user_id, employees.user_id),
+        updated_at = now()
     `;
     await tx`
       insert into wage_history (employee_id, old_wage_cents, new_wage_cents, effective_date, changed_by_user_id, reason)
