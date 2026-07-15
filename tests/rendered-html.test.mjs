@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 async function render(path = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -33,4 +34,10 @@ test("the public login page preserves Spartan's visual identity", async () => {
   assert.match(html, /SECURE ACCESS/);
   assert.doesNotMatch(html, /Good morning, Justin/);
   assert.doesNotMatch(html, /codex-preview/);
+});
+
+test("the Render server build does not bundle Cloudflare's PostgreSQL socket adapter", { skip: process.env.RENDER !== "true" }, async () => {
+  const serverBundle = await readFile(new URL("../dist/server/index.js", import.meta.url), "utf8");
+  assert.doesNotMatch(serverBundle, /cloudflare:sockets/);
+  assert.match(serverBundle, /from\s+["']postgres["']/);
 });
