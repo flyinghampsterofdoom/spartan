@@ -38,7 +38,7 @@ function Brand() {
   return <div className="brand"><span className="brand-mark">S</span><span>SPARTAN</span></div>;
 }
 
-export function SpartanApp({ userName }: { userName: string }) {
+export function SpartanApp({ userName, roleName, organizationName, canAdmin, isPlatformAdmin }: { userName: string; roleName: string; organizationName: string; canAdmin: boolean; isPlatformAdmin: boolean }) {
   const [view, setView] = useState<View>("dashboard");
   const [clock, setClock] = useState<ClockState>("working");
   const [toast, setToast] = useState("");
@@ -70,7 +70,8 @@ export function SpartanApp({ userName }: { userName: string }) {
         </nav>
         <div className="sidebar-foot">
           <div className="help-card"><span>?</span><div><strong>Need a hand?</strong><small>Spartan field guide</small></div></div>
-          <div className="profile-mini"><span className="avatar amber">JR</span><div><strong>{userName}</strong><small>Owner</small></div><button aria-label="Account menu">•••</button></div>
+          <div className="profile-mini"><span className="avatar amber">{userName.split(" ").map(part => part[0]).join("").slice(0, 2).toUpperCase()}</span><div><strong>{userName}</strong><small>{roleName} · {organizationName}</small></div></div>
+          <div className="account-links"><a href="/account">Account & sessions</a>{canAdmin && <a href="/settings">Company settings</a>}{isPlatformAdmin && <a href="/platform-admin">Platform admin</a>}<form action="/api/auth/logout" method="post"><button type="submit">Log out</button></form></div>
         </div>
       </aside>
 

@@ -6,7 +6,7 @@
 - **Runtime:** Node 22 on Render using a Next-compatible Vinext app router. Route handlers remain stateless and API-ready for a future native app.
 - **Database:** Render PostgreSQL 18 with Drizzle ORM, checked-in migrations, and managed PgBouncer.
 - **Files:** Object storage for punch photos and future documents; PostgreSQL stores attachment metadata and visibility.
-- **Identity:** Native email/password sessions and organization invitations are the production target. Application roles and permissions remain in Spartan's own database.
+- **Identity:** Native email/password authentication uses scrypt password hashes, hashed session/reset/invitation tokens, expiring server sessions, and secure HTTP-only cookies. Application roles and permissions remain in Spartan's own database.
 - **Exports:** Server-generated CSV initially; XLSX and accounting/payroll adapters can be added behind the reporting service.
 
 ## Application architecture
@@ -46,6 +46,10 @@ Permissions are capabilities, not UI labels. Effective access is: explicit user 
 | Reports / exports | Full | Granted | Granted summaries | Own time | Granted view |
 
 Employees can never approve their own time or punch work. Wage capabilities are separate from employee visibility. Data queries also enforce project, crew, or self scope.
+
+Platform access is stored separately from organization membership. A company
+Owner is not a Spartan platform administrator unless the User also has an active
+`PLATFORM_ADMIN` or `PLATFORM_SUPPORT` platform-access record.
 
 ## Primary user flows
 

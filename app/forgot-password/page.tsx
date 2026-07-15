@@ -1,0 +1,4 @@
+export default async function ForgotPasswordPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const sent = (await searchParams).sent === "1";
+  return <main className="auth-page"><section className="auth-card"><a className="auth-brand" href="/login"><span>S</span> SPARTAN</a><p className="section-mark">ACCOUNT RECOVERY</p><h1>Reset your password</h1>{sent ? <div className="form-success">If an active Spartan account matches that email, a reset link has been sent.</div> : <><p>Enter your email. For security, the response is the same whether or not an account exists.</p><form action="/api/auth/password-reset/request" method="post" className="auth-form"><label>Email<input type="email" name="email" autoComplete="email" required /></label><button className="primary full" type="submit">Send reset link</button></form></>}<a className="auth-link" href="/login">Back to login</a></section></main>;
+}

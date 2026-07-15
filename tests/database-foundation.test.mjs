@@ -5,12 +5,10 @@ import { PGlite } from "@electric-sql/pglite";
 
 test("the initial PostgreSQL migration creates Spartan's canonical model", async () => {
   const db = new PGlite();
-  const migration = await readFile(
-    new URL("../drizzle/0000_sudden_daredevil.sql", import.meta.url),
-    "utf8",
-  );
+  const migrationFiles = ["0000_sudden_daredevil.sql", "0001_omniscient_nemesis.sql", "0002_lyrical_annihilus.sql"];
+  const migrations = await Promise.all(migrationFiles.map((file) => readFile(new URL(`../drizzle/${file}`, import.meta.url), "utf8")));
 
-  await db.exec(migration.replaceAll("--> statement-breakpoint", ""));
+  for (const migration of migrations) await db.exec(migration.replaceAll("--> statement-breakpoint", ""));
 
   const tables = await db.query(`
     select table_name
@@ -33,11 +31,15 @@ test("the initial PostgreSQL migration creates Spartan's canonical model", async
     "punch_item_events",
     "attachments",
     "audit_events",
+    "password_reset_tokens",
+    "platform_access",
+    "email_deliveries",
+    "auth_login_attempts",
   ]) {
     assert.ok(tableNames.has(required), `missing required table: ${required}`);
   }
 
-  assert.equal(tableNames.size, 26);
+  assert.equal(tableNames.size, 30);
 
   const timeColumns = await db.query(`
     select column_name

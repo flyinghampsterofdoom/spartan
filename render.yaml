@@ -12,7 +12,7 @@ projects:
             buildCommand: npm ci --include=dev && npm run build
             preDeployCommand: npm run db:migrate && npm run db:seed
             startCommand: npm start
-            healthCheckPath: /
+            healthCheckPath: /login
             autoDeployTrigger: commit
             envVars:
               - key: NODE_ENV
@@ -23,6 +23,20 @@ projects:
                 fromDatabase:
                   name: spartan-db
                   property: connectionPoolString
+              - key: APP_URL
+                value: https://spartan-operations.onrender.com
+              - key: SESSION_TTL_HOURS
+                value: "12"
+              - key: SPARTAN_BOOTSTRAP_EMAIL
+                sync: false
+              - key: SPARTAN_BOOTSTRAP_PASSWORD
+                sync: false
+              - key: EMAIL_PROVIDER
+                sync: false
+              - key: EMAIL_FROM
+                sync: false
+              - key: RESEND_API_KEY
+                sync: false
         databases:
           - name: spartan-db
             plan: basic-256mb

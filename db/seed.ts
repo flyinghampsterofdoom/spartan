@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { hashPassword } from "../lib/auth/crypto";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -6,6 +7,10 @@ if (!databaseUrl) {
 }
 
 const sql = postgres(databaseUrl, { max: 1, prepare: false });
+const bootstrapEmail = process.env.SPARTAN_BOOTSTRAP_EMAIL?.trim().toLowerCase() || "justin@example.com";
+const bootstrapPasswordHash = process.env.SPARTAN_BOOTSTRAP_PASSWORD
+  ? await hashPassword(process.env.SPARTAN_BOOTSTRAP_PASSWORD)
+  : null;
 
 const ids = {
   organization: "00000000-0000-4000-8000-000000000001",
@@ -51,10 +56,12 @@ const permissionKeys = [
   "time.view", "time.clock", "time.edit", "time.approve",
   "punch.view", "punch.work", "punch.manage", "punch.approve",
   "reports.view", "exports.create", "settings.manage",
+  "organization.settings.manage", "organization.memberships.manage", "organization.invitations.manage",
+  "wage.view", "wage.edit", "wage.audit", "platform.diagnostics.view",
 ] as const;
 
 const employees = [
-  [ids.employees.justin, "EMP-001", "Justin", "Rawlinson", "justin@example.com", ids.roles.owner, 4200, "2026-01-01"],
+  [ids.employees.justin, "EMP-001", "Justin", "Rawlinson", bootstrapEmail, ids.roles.owner, 4200, "2026-01-01"],
   [ids.employees.jake, "EMP-014", "Jake", "Morrison", "jake@example.com", ids.roles.foreman, 3100, "2026-06-01"],
   [ids.employees.carlos, "EMP-018", "Carlos", "Diaz", "carlos@example.com", ids.roles.employee, 2850, "2026-01-01"],
   [ids.employees.mike, "EMP-021", "Mike", "Mercer", "mike@example.com", ids.roles.foreman, 3350, "2026-03-15"],
@@ -81,9 +88,15 @@ await sql.begin(async (transaction) => {
     on conflict (role_id, permission_id) do nothing
   `;
   await tx`
+    delete from role_permissions
+    where role_id = ${ids.roles.manager} and permission_id in (
+      select id from permissions where key in ('settings.manage','wages.view','wages.manage','wage.view','wage.edit','wage.audit','platform.diagnostics.view')
+    )
+  `;
+  await tx`
     insert into role_permissions (role_id, permission_id)
     select ${ids.roles.manager}::uuid, id from permissions
-    where key not in ('settings.manage')
+    where key not in ('settings.manage','wages.view','wages.manage','wage.view','wage.edit','wage.audit','platform.diagnostics.view')
     on conflict (role_id, permission_id) do nothing
   `;
   await tx`
@@ -93,10 +106,28 @@ await sql.begin(async (transaction) => {
     on conflict (role_id, permission_id) do nothing
   `;
   await tx`
+    update role_permissions set scope = 'assigned_project'
+    where role_id = ${ids.roles.foreman} and permission_id in (
+      select id from permissions where key in ('projects.view','schedules.view','time.view','time.edit','time.approve','punch.view','punch.work','punch.manage','punch.approve','reports.view')
+    )
+  `;
+  await tx`
+    update role_permissions set scope = 'assigned_crew'
+    where role_id = ${ids.roles.foreman} and permission_id in (
+      select id from permissions where key in ('employees.view','schedules.manage')
+    )
+  `;
+  await tx`
     insert into role_permissions (role_id, permission_id)
     select ${ids.roles.employee}::uuid, id from permissions
     where key in ('projects.view','schedules.view','time.view','time.clock','punch.view','punch.work')
     on conflict (role_id, permission_id) do nothing
+  `;
+  await tx`
+    update role_permissions set scope = 'self'
+    where role_id = ${ids.roles.employee} and permission_id in (
+      select id from permissions where key in ('schedules.view','time.view','time.clock','punch.work')
+    )
   `;
   await tx`
     insert into role_permissions (role_id, permission_id)
@@ -106,8 +137,23 @@ await sql.begin(async (transaction) => {
   `;
 
   await tx`insert into organizations (id, name, slug) values (${ids.organization}, 'Spartan Construction', 'spartan-construction') on conflict (slug) do nothing`;
-  await tx`insert into users (id, email, display_name, active, email_verified_at) values (${ids.ownerUser}, 'justin@example.com', 'Justin Rawlinson', true, now()) on conflict (lower(email)) do nothing`;
-  await tx`insert into organization_memberships (id, organization_id, user_id, role_id, status, joined_at) values (${ids.ownerMembership}, ${ids.organization}, ${ids.ownerUser}, ${ids.roles.owner}, 'active', now()) on conflict (organization_id, user_id) do nothing`;
+  await tx`
+    insert into users (id, email, display_name, password_hash, active, status, email_verified_at, password_changed_at)
+    values (${ids.ownerUser}, ${bootstrapEmail}, 'Justin Rawlinson', ${bootstrapPasswordHash}, true, 'active', now(), ${bootstrapPasswordHash ? new Date() : null})
+    on conflict (id) do update set email = excluded.email,
+      password_hash = coalesce(excluded.password_hash, users.password_hash),
+      status = 'active', active = true, updated_at = now()
+  `;
+  await tx`
+    insert into organization_memberships (id, organization_id, user_id, role_id, status, joined_at)
+    values (${ids.ownerMembership}, ${ids.organization}, ${ids.ownerUser}, ${ids.roles.owner}, 'active', now())
+    on conflict (organization_id, user_id) do update set status = 'active', role_id = excluded.role_id, updated_at = now()
+  `;
+  await tx`
+    insert into platform_access (user_id, role, status, granted_by_user_id)
+    values (${ids.ownerUser}, 'PLATFORM_ADMIN', 'active', ${ids.ownerUser})
+    on conflict (user_id, role) do update set status = 'active', revoked_at = null
+  `;
 
   for (const [id, number, first, last, email, roleId, wage, effectiveDate] of employees) {
     await tx`
@@ -121,6 +167,7 @@ await sql.begin(async (transaction) => {
       where not exists (select 1 from wage_history where employee_id = ${id} and effective_date = ${effectiveDate})
     `;
   }
+  await tx`update organization_memberships set employee_id = ${ids.employees.justin}, updated_at = now() where id = ${ids.ownerMembership}`;
 
   await tx`insert into crews (id, organization_id, name, foreman_employee_id) values (${ids.crews.interior}, ${ids.organization}, 'Justin Interior Crew', ${ids.employees.jake}) on conflict (organization_id, name) do nothing`;
   await tx`insert into crews (id, organization_id, name, foreman_employee_id) values (${ids.crews.finish}, ${ids.organization}, 'Mercer Finish Crew', ${ids.employees.mike}) on conflict (organization_id, name) do nothing`;
