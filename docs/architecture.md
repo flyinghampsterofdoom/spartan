@@ -5,7 +5,7 @@
 - **Web:** TypeScript, React 19, Next-compatible Vinext app router, Tailwind/CSS.
 - **Runtime:** Node 22 on Render using a Next-compatible Vinext app router. Route handlers remain stateless and API-ready for a future native app.
 - **Database:** Render PostgreSQL 18 with Drizzle ORM, checked-in migrations, and managed PgBouncer.
-- **Files:** Object storage for punch photos and future documents; PostgreSQL stores attachment metadata and visibility.
+- **Files:** Private Cloudflare R2 behind a reusable server adapter. PostgreSQL stores organization ownership, target type/id, event context, checksums, visibility, and auditable soft-deletion metadata.
 - **Identity:** Native email/password authentication uses scrypt password hashes, hashed session/reset/invitation tokens, expiring server sessions, and secure HTTP-only cookies. Application roles and permissions remain in Spartan's own database.
 - **Exports:** Server-generated CSV initially; XLSX and accounting/payroll adapters can be added behind the reporting service.
 

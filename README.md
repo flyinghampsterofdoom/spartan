@@ -11,12 +11,11 @@ wages, punch work, and labor reporting.
 - Render groups the Starter web service and Basic-256mb PostgreSQL database under the Spartan / Production environment.
 - PostgreSQL uses the 1 GB minimum storage allocation, managed PgBouncer, and private-network-only access.
 - Render runs the checked-in Drizzle migration and idempotent demo seed before each deployment.
+- Cloudflare R2 stores private field attachments. Render accesses the bucket through scoped server-only credentials; PostgreSQL remains authoritative for ownership, permissions, event context, and deletion state.
 
 Render PostgreSQL is Spartan's production system of record. The database layer,
 initial migration, organization-aware permission model, and realistic demo seed
-are ready. The current web interface is still an interactive application shell;
-its individual modules will move from browser seed data to server-side CRUD in
-the next implementation stages.
+and organization-aware operational modules are connected to persistent server-side services.
 
 ## Authentication and administration
 
@@ -34,6 +33,12 @@ Copy `.env.example` to `.env.local` for local development. Production variables
 are documented in [the Render deployment guide](docs/deployment.md). Never commit
 real passwords, email keys, database URLs, invitation tokens, reset tokens, or
 session tokens.
+
+## Attachments and Punch Walk
+
+`/punch` supports protected field-photo evidence tied to punch items and, where possible, the exact workflow event that produced it. `/punch/walk` is a mobile-first rapid capture surface over the same punch-item command and event-history services. Its retained project, area, category, and assignee defaults are device-local conveniences; PostgreSQL and server authorization remain authoritative.
+
+Attachment bytes are never public. `/api/attachments/:id` authenticates the request, verifies organization and underlying-record access, then retrieves the private R2 object server-side. Deletion soft-deletes PostgreSQL metadata and appends audit and punch events before object removal is attempted.
 
 ## Development foundation
 

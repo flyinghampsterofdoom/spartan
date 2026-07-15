@@ -302,13 +302,18 @@ export const punchItems = pgTable("punch_items", {
   executionStatus: text("execution_status").notNull().default("not_started"),
   verificationStatus: text("verification_status").notNull().default("not_reviewed"),
   exceptionStatus: text("exception_status"),
+  clientRequestId: text("client_request_id"),
   clientVisible: boolean("client_visible").notNull().default(false),
   createdByUserId: uuid("created_by_user_id").notNull().references(() => users.id),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   approvedAt: timestamp("approved_at", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (t) => [uniqueIndex("punch_item_number_uq").on(t.projectId, t.itemNumber), index("punch_status_idx").on(t.projectId, t.executionStatus, t.verificationStatus)]);
+}, (t) => [
+  uniqueIndex("punch_item_number_uq").on(t.projectId, t.itemNumber),
+  uniqueIndex("punch_client_request_uq").on(t.projectId, t.clientRequestId).where(sql`${t.clientRequestId} is not null`),
+  index("punch_status_idx").on(t.projectId, t.executionStatus, t.verificationStatus),
+]);
 
 export const punchItemEvents = pgTable("punch_item_events", {
   id: id(),
@@ -329,10 +334,21 @@ export const attachments = pgTable("attachments", {
   fileName: text("file_name").notNull(),
   contentType: text("content_type").notNull(),
   byteSize: integer("byte_size").notNull(),
+  checksumSha256: text("checksum_sha256").notNull(),
   visibility: text("visibility").notNull().default("internal"),
+  relatedEventId: uuid("related_event_id"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
   uploadedByUserId: uuid("uploaded_by_user_id").notNull().references(() => users.id),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedByUserId: uuid("deleted_by_user_id").references(() => users.id),
+  deletionReason: text("deletion_reason"),
+  objectDeletePending: boolean("object_delete_pending").notNull().default(false),
   createdAt: createdAt(),
-}, (t) => [index("attachments_owner_idx").on(t.ownerType, t.ownerId)]);
+}, (t) => [
+  uniqueIndex("attachments_storage_key_uq").on(t.storageKey),
+  index("attachments_owner_idx").on(t.organizationId, t.ownerType, t.ownerId),
+  index("attachments_event_idx").on(t.relatedEventId),
+]);
 
 export const timeCorrectionRequests = pgTable("time_correction_requests", {
   id: id(),

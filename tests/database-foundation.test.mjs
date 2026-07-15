@@ -5,7 +5,7 @@ import { PGlite } from "@electric-sql/pglite";
 
 test("the initial PostgreSQL migration creates Spartan's canonical model", async () => {
   const db = new PGlite();
-  const migrationFiles = ["0000_sudden_daredevil.sql", "0001_omniscient_nemesis.sql", "0002_lyrical_annihilus.sql"];
+  const migrationFiles = ["0000_sudden_daredevil.sql", "0001_omniscient_nemesis.sql", "0002_lyrical_annihilus.sql", "0003_dry_ender_wiggin.sql"];
   const migrations = await Promise.all(migrationFiles.map((file) => readFile(new URL(`../drizzle/${file}`, import.meta.url), "utf8")));
 
   for (const migration of migrations) await db.exec(migration.replaceAll("--> statement-breakpoint", ""));
@@ -50,6 +50,13 @@ test("the initial PostgreSQL migration creates Spartan's canonical model", async
   assert.ok(timeColumnNames.has("wage_snapshot_cents"));
   assert.ok(timeColumnNames.has("regular_minutes"));
   assert.ok(timeColumnNames.has("overtime_minutes"));
+
+  const attachmentColumns = await db.query(`select column_name from information_schema.columns where table_schema='public' and table_name='attachments'`);
+  const attachmentColumnNames = new Set(attachmentColumns.rows.map((row) => row.column_name));
+  for (const column of ["checksum_sha256", "related_event_id", "metadata", "deleted_at", "deleted_by_user_id", "deletion_reason", "object_delete_pending"]) assert.ok(attachmentColumnNames.has(column));
+
+  const punchColumns = await db.query(`select column_name from information_schema.columns where table_schema='public' and table_name='punch_items'`);
+  assert.ok(new Set(punchColumns.rows.map((row) => row.column_name)).has("client_request_id"));
 
   await db.close();
 });

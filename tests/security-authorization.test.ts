@@ -11,6 +11,7 @@ import { addDays, getWeekStart, parseScheduleDate, scheduleScope, ScheduleValida
 import { calculateLabor, dateInTimeZone, timeScope } from "../lib/timekeeping";
 import { effectiveWageFromHistory, hasWageAdministrationAccess, parseWageCents, parseWageDate, WageValidationError } from "../lib/wages";
 import { assertApprovalTransition, assertExecutionTransition, punchAccessScope, punchAssignmentBelongsToEmployee, PunchValidationError } from "../lib/punch";
+import { attachmentAccessAllowed, attachmentObjectKey, deletePermissionsForAttachment, eventTypesForAttachmentContext, uploadPermissionsForContext, validateImageSignature, AttachmentValidationError } from "../lib/attachments";
 
 function context(overrides: Partial<AuthContext> = {}): AuthContext {
   return {
@@ -111,6 +112,34 @@ test("punch approval treats direct and crew assignments as self work", () => {
   assert.equal(punchAssignmentBelongsToEmployee("employee-a", "employee-b", true), true);
   assert.equal(punchAssignmentBelongsToEmployee("employee-a", "employee-b", false), false);
   assert.equal(punchAccessScope(context({ permissions: { "punch.work": { allowed: true, scope: "self" } } })), "self");
+});
+
+test("attachment access requires organization isolation and underlying authorization", () => {
+  assert.equal(attachmentAccessAllowed("org-a", "org-a", true), true);
+  assert.equal(attachmentAccessAllowed("org-a", "org-b", true), false);
+  assert.equal(attachmentAccessAllowed("org-a", "org-a", false), false);
+});
+
+test("attachment upload and deletion permissions follow workflow context", () => {
+  assert.deepEqual(uploadPermissionsForContext("completion"), ["punch.work", "punch.manage"]);
+  assert.deepEqual(uploadPermissionsForContext("rejection_review"), ["punch.approve", "punch.manage"]);
+  assert.deepEqual(deletePermissionsForAttachment(false, "completion"), ["punch.manage"]);
+  assert.deepEqual(deletePermissionsForAttachment(true, "completion"), ["punch.work", "punch.manage"]);
+});
+
+test("punch photos resolve to the workflow event that produced them", () => {
+  assert.deepEqual(eventTypesForAttachmentContext("initial_issue"), ["item.created"]);
+  assert.deepEqual(eventTypesForAttachmentContext("completion"), ["execution.work_complete"]);
+  assert.deepEqual(eventTypesForAttachmentContext("rejection_review"), ["approval.rework_required", "approval.approved"]);
+});
+
+test("attachment validation rejects MIME spoofing and creates collision-resistant keys", () => {
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0x00]);
+  assert.doesNotThrow(() => validateImageSignature("image/jpeg", jpeg));
+  assert.throws(() => validateImageSignature("image/png", jpeg), AttachmentValidationError);
+  const key = attachmentObjectKey("10000000-0000-4000-8000-000000000001", "punch_item", "81000000-0000-4000-8000-000000000001", "91000000-0000-4000-8000-000000000001");
+  assert.equal(key, "10000000-0000-4000-8000-000000000001/punch_item/81000000-0000-4000-8000-000000000001/91000000-0000-4000-8000-000000000001");
+  assert.doesNotMatch(key, /photo|\.jpg/i);
 });
 
 test("organization Owner role does not imply platform administration", () => {

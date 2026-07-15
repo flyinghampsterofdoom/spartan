@@ -106,6 +106,15 @@ async function authorizePunchItem(auth: AuthContext, permission: string, item: P
   await authorizeResource(auth, permission, { organizationId: item.organization_id, projectId: item.project_id, employeeId: item.assigned_employee_id, crewId: item.assigned_crew_id });
 }
 
+export async function authorizePunchItemAction(auth: AuthContext, itemId: string, permissions = ACCESS_PERMISSIONS) {
+  const item = await loadPunchItem(itemId);
+  if (!item) throw new PunchValidationError("Punch item not found.");
+  const access = bestPermission(auth, permissions);
+  if (!access) throw new AuthorizationError();
+  await authorizePunchItem(auth, access.permission, item);
+  return item;
+}
+
 async function assertNotAssignedWorker(auth: AuthContext, item: PunchAccessRow) {
   if (!auth.employeeId) return;
   if (punchAssignmentBelongsToEmployee(auth.employeeId, item.assigned_employee_id, false)) throw new AuthorizationError("You cannot approve punch work assigned to you.");
@@ -220,6 +229,7 @@ export async function createPunchList(auth: AuthContext, form: FormData) {
   if (!project[0]) throw new PunchValidationError("Project not found.");
   const rows = await sql<{ id: string }[]>`insert into punch_lists (project_id, name, description, created_by_user_id) values (${projectId}, ${name}, ${description}, ${auth.userId}) returning id`;
   await writeAuditEvent({ organizationId: auth.organizationId, actorUserId: auth.userId, entityType: "punch_list", entityId: rows[0].id, action: "punch_list.created", newValue: { projectId, name, description } });
+  return rows[0].id;
 }
 
 export async function createPunchItem(auth: AuthContext, form: FormData) {
@@ -232,6 +242,7 @@ export async function createPunchItem(auth: AuthContext, form: FormData) {
   const workCategoryId = uuid(form.get("workCategoryId"), "Work category", true);
   const assignedEmployeeId = uuid(form.get("assignedEmployeeId"), "Assigned employee", true);
   const assignedCrewId = uuid(form.get("assignedCrewId"), "Assigned crew", true);
+  const clientRequestId = uuid(form.get("clientRequestId"), "Submission", true);
   if (assignedEmployeeId && assignedCrewId) throw new PunchValidationError("Assign the item to either an employee or a crew, not both.");
   const dueDate = date(form.get("dueDate"));
   const sql = getSql();
@@ -239,6 +250,13 @@ export async function createPunchItem(auth: AuthContext, form: FormData) {
   const projectId = lists[0]?.project_id;
   if (!projectId) throw new PunchValidationError("Punch list not found.");
   await authorizeResource(auth, "punch.manage", { organizationId: auth.organizationId, projectId });
+  if (clientRequestId) {
+    const existing = await sql<{ id: string; event_id: string | null }[]>`
+      select pi.id, (select id from punch_item_events where punch_item_id=pi.id and event_type='item.created' order by created_at limit 1) as event_id
+      from punch_items pi where pi.project_id=${projectId} and pi.client_request_id=${clientRequestId}
+    `;
+    if (existing[0]) return { itemId: existing[0].id, eventId: existing[0].event_id, duplicate: true };
+  }
   if (areaId) {
     const valid = await sql<{ ok: boolean }[]>`select exists(select 1 from project_areas where id=${areaId} and project_id=${projectId}) as ok`;
     if (!valid[0]?.ok) throw new PunchValidationError("Area does not belong to this project.");
@@ -259,17 +277,30 @@ export async function createPunchItem(auth: AuthContext, form: FormData) {
   if (duplicate[0]?.exists) throw new PunchValidationError("That item number already exists on this project.");
   const state = { executionStatus: "not_started", approvalStatus: "not_reviewed" };
   let itemId = "";
-  await sql.begin(async transaction => {
-    const tx = transaction as unknown as typeof sql;
-    const rows = await tx<{ id: string }[]>`
-      insert into punch_items (item_number, project_id, punch_list_id, area_id, work_category_id, description, priority, assigned_employee_id, assigned_crew_id, due_date, created_by_user_id)
-      values (${itemNumber}, ${projectId}, ${punchListId}, ${areaId}, ${workCategoryId}, ${description}, ${priority}, ${assignedEmployeeId}, ${assignedCrewId}, ${dueDate}, ${auth.userId}) returning id
-    `;
-    itemId = rows[0].id;
-    await tx`insert into punch_item_events (punch_item_id, event_type, actor_user_id, notes, metadata) values (${itemId}, 'item.created', ${auth.userId}, ${description}, ${JSON.stringify(state)}::jsonb)`;
-  });
+  let eventId = "";
+  try {
+    await sql.begin(async transaction => {
+      const tx = transaction as unknown as typeof sql;
+      const rows = await tx<{ id: string }[]>`
+        insert into punch_items (item_number, project_id, punch_list_id, area_id, work_category_id, description, priority, assigned_employee_id, assigned_crew_id, due_date, client_request_id, created_by_user_id)
+        values (${itemNumber}, ${projectId}, ${punchListId}, ${areaId}, ${workCategoryId}, ${description}, ${priority}, ${assignedEmployeeId}, ${assignedCrewId}, ${dueDate}, ${clientRequestId}, ${auth.userId}) returning id
+      `;
+      itemId = rows[0].id;
+      const events = await tx<{ id: string }[]>`insert into punch_item_events (punch_item_id, event_type, actor_user_id, notes, metadata) values (${itemId}, 'item.created', ${auth.userId}, ${description}, ${JSON.stringify({ ...state, clientRequestId })}::jsonb) returning id`;
+      eventId = events[0].id;
+    });
+  } catch (error) {
+    if (clientRequestId && typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+      const existing = await sql<{ id: string; event_id: string | null }[]>`
+        select pi.id, (select id from punch_item_events where punch_item_id=pi.id and event_type='item.created' order by created_at limit 1) as event_id
+        from punch_items pi where pi.project_id=${projectId} and pi.client_request_id=${clientRequestId}
+      `;
+      if (existing[0]) return { itemId: existing[0].id, eventId: existing[0].event_id, duplicate: true };
+    }
+    throw error;
+  }
   await writeAuditEvent({ organizationId: auth.organizationId, actorUserId: auth.userId, entityType: "punch_item", entityId: itemId, action: "punch.item_created", newValue: { projectId, punchListId, itemNumber, description, assignedEmployeeId, assignedCrewId, ...state } });
-  return itemId;
+  return { itemId, eventId, duplicate: false };
 }
 
 export async function changePunchExecution(auth: AuthContext, form: FormData) {

@@ -12,7 +12,7 @@ async function render(path = "/") {
 }
 
 test("anonymous visitors are redirected away from the operational shell", async () => {
-  for (const path of ["/", "/projects", "/employees", "/crews", "/schedule", "/time", "/wages", "/punch"]) {
+  for (const path of ["/", "/projects", "/employees", "/crews", "/schedule", "/time", "/wages", "/punch", "/punch/walk"]) {
     const response = await render(path);
     assert.equal(response.status, 307);
     assert.match(response.headers.get("location") ?? "", /\/login$/);

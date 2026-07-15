@@ -13,6 +13,10 @@ failed migration prevents the unhealthy release from replacing the current servi
 | `SESSION_TTL_HOURS` | No | Absolute server-session lifetime. Defaults to 12 hours. |
 | `SPARTAN_BOOTSTRAP_EMAIL` | No | Email for the initial seeded Owner and platform administrator. |
 | `SPARTAN_BOOTSTRAP_PASSWORD` | Yes | Optional initial Owner password. Set in Render and never in source. When omitted for an unactivated Owner, the seed writes a single-use 24-hour activation link to restricted Render deploy logs. |
+| `R2_ACCOUNT_ID` | Yes | Cloudflare account containing Spartan's private attachment bucket. |
+| `R2_ACCESS_KEY_ID` | Yes | R2 S3 API token access-key ID, scoped to the attachment bucket. |
+| `R2_SECRET_ACCESS_KEY` | Yes | R2 S3 API token secret. Never expose it to browser code. |
+| `R2_BUCKET_NAME` | Yes | Private R2 bucket used for field attachments. |
 
 ## Email variables
 
@@ -30,6 +34,17 @@ Production delivery uses `EMAIL_PROVIDER=resend`, `EMAIL_FROM`, and the secret
 - Disabling a user, membership, or organization revokes affected sessions.
 - Mutation routes reject cross-site browser requests and re-check server authorization.
 - PostgreSQL is private-network-only through Render's managed pooler.
+- R2 remains private. Image retrieval passes through authenticated Spartan routes; do not enable a public bucket URL.
+- The R2 token should be limited to object read/write on the single Spartan attachment bucket.
+
+## R2 attachment setup
+
+1. Create a private Cloudflare R2 bucket dedicated to Spartan attachments.
+2. Create an R2 S3 API token with object read/write access limited to that bucket.
+3. Set the four `R2_*` variables above on the Render web service.
+4. Redeploy the current commit. No R2 value belongs in GitHub or a client-visible environment variable.
+
+PostgreSQL retains attachment metadata after deletion for auditability. Spartan immediately hides soft-deleted records, attempts to remove the R2 object, and flags a failed object removal for later cleanup rather than silently losing the audit record.
 
 After changing the schema, run `npm run db:generate`, inspect the SQL, and commit the
 migration. Validate with `npm test`, `npm run lint`, and `npx tsc --noEmit`.

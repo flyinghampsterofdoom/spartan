@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   let destination = itemDestination(form.get("itemId"));
   try {
     if (action === "list_create") await createPunchList(auth, form);
-    else if (action === "item_create") destination = `/punch?item=${await createPunchItem(auth, form)}`;
+    else if (action === "item_create") destination = `/punch?item=${(await createPunchItem(auth, form)).itemId}`;
     else if (action === "execution_change") await changePunchExecution(auth, form);
     else if (action === "approval_change") await changePunchApproval(auth, form);
     else if (action === "note_add") await addPunchNote(auth, form);
