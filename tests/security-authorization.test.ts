@@ -6,6 +6,7 @@ import type { AuthContext } from "../lib/auth/types";
 import { appUrl } from "../lib/http/app-url";
 import { assertSameOrigin } from "../lib/http/security";
 import { NextRequest } from "next/server";
+import { operationScope, parseMoneyToCents, ValidationError } from "../lib/operations";
 
 function context(overrides: Partial<AuthContext> = {}): AuthContext {
   return {
@@ -114,4 +115,19 @@ test("same-origin protection accepts the configured public origin behind Render'
   });
   assert.throws(() => assertSameOrigin(crossOriginRequest), /Cross-origin request rejected/);
   if (priorAppUrl === undefined) delete process.env.APP_URL; else process.env.APP_URL = priorAppUrl;
+});
+
+test("operational list scopes preserve server-side self and assignment boundaries", () => {
+  assert.equal(operationScope(context(), "employees.view"), null);
+  const selfContext = context({ permissions: { "employees.view": { allowed: true, scope: "self" } } });
+  assert.equal(operationScope(selfContext, "employees.view"), "self");
+  const foremanContext = context({ permissions: { "projects.view": { allowed: true, scope: "assigned_project" } } });
+  assert.equal(operationScope(foremanContext, "projects.view"), "assigned_project");
+});
+
+test("hourly wages are normalized to integer cents and malformed values are rejected", () => {
+  assert.equal(parseMoneyToCents("28"), 2800);
+  assert.equal(parseMoneyToCents("31.50"), 3150);
+  assert.throws(() => parseMoneyToCents("31.999"), ValidationError);
+  assert.throws(() => parseMoneyToCents("-5"), ValidationError);
 });
