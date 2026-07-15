@@ -4,6 +4,8 @@ import { assertNotSelfApproval, can, ensureAuthenticated, isAccountUsable, redac
 import { hashPassword, verifyPassword } from "../lib/auth/crypto";
 import type { AuthContext } from "../lib/auth/types";
 import { appUrl } from "../lib/http/app-url";
+import { assertSameOrigin } from "../lib/http/security";
+import { NextRequest } from "next/server";
 
 function context(overrides: Partial<AuthContext> = {}): AuthContext {
   return {
@@ -89,4 +91,27 @@ test("production redirects use Render's external HTTPS URL when APP_URL is unset
   assert.equal(appUrl("/login"), "https://spartan-operations.onrender.com/login");
   if (priorAppUrl === undefined) delete process.env.APP_URL; else process.env.APP_URL = priorAppUrl;
   if (priorRenderUrl === undefined) delete process.env.RENDER_EXTERNAL_URL; else process.env.RENDER_EXTERNAL_URL = priorRenderUrl;
+});
+
+test("same-origin protection accepts the configured public origin behind Render's proxy", () => {
+  const priorAppUrl = process.env.APP_URL;
+  process.env.APP_URL = "https://spartan-operations.onrender.com";
+  const proxiedRequest = new NextRequest("http://internal-render-host:10000/api/auth/password-reset/request", {
+    method: "POST",
+    headers: {
+      origin: "https://spartan-operations.onrender.com",
+      "sec-fetch-site": "same-origin",
+    },
+  });
+  assert.doesNotThrow(() => assertSameOrigin(proxiedRequest));
+
+  const crossOriginRequest = new NextRequest("http://internal-render-host:10000/api/auth/password-reset/request", {
+    method: "POST",
+    headers: {
+      origin: "https://attacker.example",
+      "sec-fetch-site": "cross-site",
+    },
+  });
+  assert.throws(() => assertSameOrigin(crossOriginRequest), /Cross-origin request rejected/);
+  if (priorAppUrl === undefined) delete process.env.APP_URL; else process.env.APP_URL = priorAppUrl;
 });
