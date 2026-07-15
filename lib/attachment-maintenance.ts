@@ -47,6 +47,7 @@ export async function runAttachmentMaintenanceIfDue(now = new Date()) {
 
     const organizations = await sql<{ id: string }[]>`select id from organizations where status <> 'disabled' order by id`;
     let reconciled = 0;
+    let reconciliationFailed = 0;
     for (const organization of organizations) {
       const reconciliationDue = await sql<{ due: boolean }[]>`
         select not exists (
@@ -55,25 +56,35 @@ export async function runAttachmentMaintenanceIfDue(now = new Date()) {
         ) as due
       `;
       if (!reconciliationDue[0]?.due) continue;
-      const records = await sql<{ storage_key: string; deleted_at: Date | null; object_delete_pending: boolean }[]>`
-        select storage_key, deleted_at, object_delete_pending from attachments where organization_id=${organization.id}
-      `;
-      const objectKeys = await storage.list(`${organization.id}/`);
-      const expectedKeys = records.filter(record => !record.deleted_at || record.object_delete_pending).map(record => record.storage_key);
-      const activeKeys = records.filter(record => !record.deleted_at).map(record => record.storage_key);
-      const result = reconcileObjectKeys(objectKeys, expectedKeys, activeKeys);
-      await sql`
-        insert into audit_events (organization_id, entity_type, entity_id, action, previous_value, new_value)
-        values (${organization.id}, 'organization', ${organization.id}, 'attachment.storage_reconciled', '{}'::jsonb,
-          ${JSON.stringify({ objectCount: objectKeys.length, expectedCount: expectedKeys.length, orphanCount: result.orphanKeys.length, missingCount: result.missingKeys.length, orphanKeys: result.orphanKeys.slice(0, 100), missingKeys: result.missingKeys.slice(0, 100) })}::jsonb)
-      `;
-      reconciled += 1;
+      try {
+        const records = await sql<{ storage_key: string; deleted_at: Date | null; object_delete_pending: boolean }[]>`
+          select storage_key, deleted_at, object_delete_pending from attachments where organization_id=${organization.id}
+        `;
+        const objectKeys = await storage.list(`${organization.id}/`);
+        const expectedKeys = records.filter(record => !record.deleted_at || record.object_delete_pending).map(record => record.storage_key);
+        const activeKeys = records.filter(record => !record.deleted_at).map(record => record.storage_key);
+        const result = reconcileObjectKeys(objectKeys, expectedKeys, activeKeys);
+        await sql`
+          insert into audit_events (organization_id, entity_type, entity_id, action, previous_value, new_value)
+          values (${organization.id}, 'organization', ${organization.id}, 'attachment.storage_reconciled', '{}'::jsonb,
+            ${JSON.stringify({ objectCount: objectKeys.length, expectedCount: expectedKeys.length, orphanCount: result.orphanKeys.length, missingCount: result.missingKeys.length, orphanKeys: result.orphanKeys.slice(0, 100), missingKeys: result.missingKeys.slice(0, 100) })}::jsonb)
+        `;
+        reconciled += 1;
+      } catch (error) {
+        reconciliationFailed += 1;
+        await sql`
+          insert into audit_events (organization_id, entity_type, entity_id, action, previous_value, new_value, reason)
+          values (${organization.id}, 'organization', ${organization.id}, 'attachment.storage_reconciliation_failed', '{}'::jsonb,
+            ${JSON.stringify({ errorType: error instanceof Error ? error.name : "UnknownError" })}::jsonb,
+            ${error instanceof Error ? error.message.slice(0, 500) : "Reconciliation failed."})
+        `;
+      }
     }
     const markerId = organizations[0]?.id;
     if (markerId) await sql`
       insert into audit_events (organization_id, entity_type, entity_id, action, previous_value, new_value)
       values (${markerId}, 'organization', ${markerId}, 'attachment.maintenance.completed', '{}'::jsonb,
-        ${JSON.stringify({ pendingFound: pending.length, deleted, failed, organizationsReconciled: reconciled })}::jsonb)
+        ${JSON.stringify({ pendingFound: pending.length, deleted, failed, organizationsReconciled: reconciled, reconciliationFailed })}::jsonb)
     `;
-  return { pendingFound: pending.length, deleted, failed, organizationsReconciled: reconciled };
+  return { pendingFound: pending.length, deleted, failed, organizationsReconciled: reconciled, reconciliationFailed };
 }
