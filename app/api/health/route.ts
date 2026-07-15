@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { runAttachmentMaintenanceIfDue } from "@/lib/attachment-maintenance";
+import { AttachmentMaintenanceError, runAttachmentMaintenanceIfDue } from "@/lib/attachment-maintenance";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +10,6 @@ export async function GET() {
     return NextResponse.json({ status: "ok", version }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Attachment maintenance failed during health check", error);
-    return NextResponse.json({ status: "ok", version, maintenance: "deferred" }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ status: "ok", version, maintenance: "deferred", stage: error instanceof AttachmentMaintenanceError ? error.stage : "unknown" }, { headers: { "Cache-Control": "no-store" } });
   }
 }
