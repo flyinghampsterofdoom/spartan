@@ -13,7 +13,8 @@ export default async function InvitationPage({ searchParams }: { searchParams: P
     rows = token ? await getSql()<{
       email: string; organization_name: string; role_name: string; existing_user: boolean;
     }[]>`
-      select i.email, o.name as organization_name, r.name as role_name, (u.id is not null) as existing_user
+      select i.email, o.name as organization_name, r.name as role_name,
+        (u.id is not null and u.password_hash is not null) as existing_user
       from invitations i join organizations o on o.id = i.organization_id join roles r on r.id = i.role_id
       left join users u on lower(u.email) = lower(i.email)
       where i.token_hash = ${hashOpaqueToken(token)} and i.status = 'invited' and i.revoked_at is null and i.accepted_at is null and i.expires_at > now()
