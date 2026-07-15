@@ -127,7 +127,7 @@ await sql.begin(async (transaction) => {
   await tx`
     update role_permissions set scope = 'self'
     where role_id = ${ids.roles.employee} and permission_id in (
-      select id from permissions where key in ('schedules.view','time.view','time.clock','punch.work')
+      select id from permissions where key in ('schedules.view','time.view','time.clock','punch.view','punch.work')
     )
   `;
   await tx`

@@ -10,6 +10,7 @@ import { operationScope, parseMoneyToCents, ValidationError } from "../lib/opera
 import { addDays, getWeekStart, parseScheduleDate, scheduleScope, ScheduleValidationError } from "../lib/scheduling";
 import { calculateLabor, dateInTimeZone, timeScope } from "../lib/timekeeping";
 import { effectiveWageFromHistory, hasWageAdministrationAccess, parseWageCents, parseWageDate, WageValidationError } from "../lib/wages";
+import { assertApprovalTransition, assertExecutionTransition, punchAccessScope, punchAssignmentBelongsToEmployee, PunchValidationError } from "../lib/punch";
 
 function context(overrides: Partial<AuthContext> = {}): AuthContext {
   return {
@@ -88,6 +89,28 @@ test("self approval is rejected for time and punch work", () => {
   const auth = context();
   assert.throws(() => assertNotSelfApproval(auth, "employee-a", "time"), /cannot approve your own time/);
   assert.throws(() => assertNotSelfApproval(auth, "employee-a", "punch"), /cannot approve your own punch/);
+});
+
+test("punch execution and approval remain independent state machines", () => {
+  assert.doesNotThrow(() => assertExecutionTransition("not_started", "in_progress", "not_reviewed"));
+  assert.doesNotThrow(() => assertExecutionTransition("in_progress", "work_complete", "not_reviewed"));
+  assert.doesNotThrow(() => assertApprovalTransition("not_reviewed", "approved", "work_complete"));
+  assert.throws(() => assertApprovalTransition("not_reviewed", "approved", "in_progress"), PunchValidationError);
+  assert.throws(() => assertExecutionTransition("work_complete", "in_progress", "approved"), PunchValidationError);
+});
+
+test("punch rework cycles preserve completion, rejection, and resubmission transitions", () => {
+  assert.doesNotThrow(() => assertApprovalTransition("approved", "rework_required", "work_complete"));
+  assert.doesNotThrow(() => assertExecutionTransition("work_complete", "in_progress", "rework_required"));
+  assert.doesNotThrow(() => assertExecutionTransition("in_progress", "work_complete", "rework_required"));
+  assert.doesNotThrow(() => assertApprovalTransition("rework_required", "not_reviewed", "work_complete"));
+});
+
+test("punch approval treats direct and crew assignments as self work", () => {
+  assert.equal(punchAssignmentBelongsToEmployee("employee-a", "employee-a", false), true);
+  assert.equal(punchAssignmentBelongsToEmployee("employee-a", "employee-b", true), true);
+  assert.equal(punchAssignmentBelongsToEmployee("employee-a", "employee-b", false), false);
+  assert.equal(punchAccessScope(context({ permissions: { "punch.work": { allowed: true, scope: "self" } } })), "self");
 });
 
 test("organization Owner role does not imply platform administration", () => {
